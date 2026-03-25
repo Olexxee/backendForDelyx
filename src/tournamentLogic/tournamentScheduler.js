@@ -1,11 +1,26 @@
 import { tournamentQueue } from "../queues/tournamentQueue.js";
 
 const getDelay = (dateLike) => {
-  return Math.max(new Date(dateLike).getTime() - Date.now(), 0);
+  const timestamp = new Date(dateLike).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    throw new Error(`Invalid date provided for scheduling: ${dateLike}`);
+  }
+
+  return Math.max(timestamp - Date.now(), 0);
 };
 
 export const scheduleTournamentJobs = async (tournament) => {
   const tournamentId = tournament._id.toString();
+
+  if (
+    tournament.registrationDeadline &&
+    tournament.endDate &&
+    new Date(tournament.endDate).getTime() <=
+      new Date(tournament.registrationDeadline).getTime()
+  ) {
+    throw new Error("endDate must be after registrationDeadline");
+  }
 
   const jobs = [];
 
@@ -47,7 +62,9 @@ export const unscheduleTournamentJobs = async (tournamentId) => {
   await Promise.all(
     jobIds.map(async (jobId) => {
       const job = await tournamentQueue.getJob(jobId);
-      if (job) await job.remove();
+      if (job) {
+        await job.remove();
+      }
     }),
   );
 };

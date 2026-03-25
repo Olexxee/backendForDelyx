@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import Group from "../groupLogic/groupSchema.js";
 import * as fixtureDb from "../models/fixtureSchemaService.js";
 import * as tournamentDb from "../models/tournamentSchemaService.js";
 import cache from "../lib/cache.js";
@@ -10,9 +9,8 @@ import {
 import {
   checkTournamentReadiness,
   generateTournamentFixturesCore,
-} from "./tournamentService.js";
+} from "./tournamentDomainService.js";
 import { updateGroupMetrics } from "../groupLogic/groupMetric.js";
-
 
 export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
   const session = await mongoose.startSession();
@@ -30,13 +28,19 @@ export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
 
     if (tournament.status !== "registration") {
       await session.commitTransaction();
+      console.log(
+        `[TournamentScheduler] Skipping auto-start for ${tournamentId}: already ${tournament.status}`,
+      );
       return {
         skipped: true,
         reason: `Tournament already in '${tournament.status}' status`,
       };
     }
 
-    const readiness = await checkTournamentReadiness({ tournamentId });
+   const readiness = await checkTournamentReadiness({
+  tournamentId,
+  session,
+});
 
     if (!readiness.canStart) {
       throw new BadRequestError(
@@ -59,16 +63,6 @@ export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
     await tournament.save({ session });
 
     const groupId = tournament.groupId._id ?? tournament.groupId;
-
-    await Group.findByIdAndUpdate(
-      groupId,
-      {
-        $inc: { activeTournamentsCount: 1 },
-        $set: { lastTournamentAt: new Date() },
-      },
-      { session },
-    );
-
     await updateGroupMetrics(groupId, session);
 
     await session.commitTransaction();
@@ -103,6 +97,9 @@ export const autoCompleteTournament = async ({ tournamentId }) => {
 
     if (tournament.status === "completed") {
       await session.commitTransaction();
+      console.log(
+        `[TournamentScheduler] Skipping auto-complete for ${tournamentId}: already completed`,
+      );
       return {
         skipped: true,
         reason: "Tournament already completed",
@@ -119,13 +116,6 @@ export const autoCompleteTournament = async ({ tournamentId }) => {
     await tournament.save({ session });
 
     const groupId = tournament.groupId._id ?? tournament.groupId;
-
-    await Group.findByIdAndUpdate(
-      groupId,
-      { $inc: { activeTournamentsCount: -1 } },
-      { session },
-    );
-
     await updateGroupMetrics(groupId, session);
 
     await session.commitTransaction();

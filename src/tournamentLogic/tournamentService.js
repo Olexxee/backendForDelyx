@@ -517,13 +517,20 @@ export const getTeamFixtures = async ({ tournamentId, teamId }) => {
 // CHECK TOURNAMENT READINESS
 // ============================================================
 
-export const checkTournamentReadiness = async ({ tournamentId }) => {
-  const tournament = await ensureTournamentExists({ tournamentId });
+export const checkTournamentReadiness = async ({
+  tournamentId,
+  session = null,
+}) => {
+  const tournament = await ensureTournamentExists({ tournamentId, session });
 
-  const totalParticipants = tournament.participants.length;
+  const registeredParticipants = tournament.participants.filter(
+    (participant) => participant.status === "registered",
+  );
+
+  const totalParticipants = registeredParticipants.length;
   const { maxParticipants } = tournament;
   const registrationClosed =
-    new Date(tournament.registrationDeadline) < new Date();
+    new Date(tournament.registrationDeadline).getTime() <= Date.now();
 
   const readiness = {
     tournamentId: tournament._id,
@@ -543,7 +550,7 @@ export const checkTournamentReadiness = async ({ tournamentId }) => {
   }
 
   if (totalParticipants < 2) {
-    readiness.reasons.push("At least 2 participants required");
+    readiness.reasons.push("At least 2 registered participants required");
   }
 
   if (!registrationClosed && totalParticipants < maxParticipants) {
@@ -556,7 +563,6 @@ export const checkTournamentReadiness = async ({ tournamentId }) => {
 
   return readiness;
 };
-
 
 // ============================================================
 // GET UPCOMING FIXTURES FOR USER

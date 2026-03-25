@@ -18,7 +18,7 @@ const jobHandlers = {
   TOURNAMENT_AUTO_COMPLETE: handleTournamentAutoComplete,
 };
 
-new Worker(
+const tournamentWorker = new Worker(
   "tournamentQueue",
   async (job) => {
     const handler = jobHandlers[job.name];
@@ -27,3 +27,18 @@ new Worker(
   },
   { connection: bullMQRedis },
 );
+
+tournamentWorker.on("completed", (job) => {
+  console.log(
+    `[TournamentWorker] Completed ${job.name} for tournament ${job.data?.tournamentId}`,
+  );
+});
+
+tournamentWorker.on("failed", (job, error) => {
+  console.error(
+    `[TournamentWorker] Failed ${job?.name} for tournament ${job?.data?.tournamentId}`,
+    error,
+  );
+});
+
+export default tournamentWorker;

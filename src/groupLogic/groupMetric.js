@@ -3,27 +3,35 @@ import Tournament from "../models/tournamentSchema.js";
 import TournamentStanding from "../models/tournamentStandingSchema.js";
 import mongoose from "mongoose";
 
-export const updateGroupMetrics = async (groupId) => {
-  if (!mongoose.Types.ObjectId.isValid(groupId)) return;
+export const updateGroupMetrics = async ({ groupId, session = null }) => {
+  if (!mongoose.Types.ObjectId.isValid(groupId)) return null;
 
-  const group = await Group.findById(groupId);
-  if (!group) return;
+  const group = await Group.findById(groupId).session(session || null);
+  if (!group) return null;
 
   const activeTournaments = await Tournament.find({
     groupId,
     status: { $in: ["registration", "ongoing"] },
-  });
+  }).session(session || null);
 
   const activeTournamentsCount = activeTournaments.length;
+
   const totalParticipantsCount = activeTournaments.reduce(
-    (acc, t) => acc + (t.participants?.length || 0),
+    (acc, tournament) =>
+      acc +
+      (tournament.participants?.filter((p) => p.status === "registered").length ||
+        0),
     0,
   );
 
-  const standings = await TournamentStanding.find({ groupId });
+  const standings = await TournamentStanding.find({ groupId }).session(
+    session || null,
+  );
+
   const avgPoints =
     standings.length > 0
-      ? standings.reduce((acc, s) => acc + s.points, 0) / standings.length
+      ? standings.reduce((acc, standing) => acc + standing.points, 0) /
+        standings.length
       : 0;
 
   const participationRate =
@@ -35,13 +43,18 @@ export const updateGroupMetrics = async (groupId) => {
   const topGamers = standings
     .sort((a, b) => b.points - a.points)
     .slice(0, 5)
-    .map((s) => ({ userId: s.userId, points: s.points }));
-    
+    .map((standing) => ({
+      userId: standing.userId,
+      points: standing.points,
+    }));
+
   group.activeTournamentsCount = activeTournamentsCount;
   group.totalParticipantsCount = totalParticipantsCount;
   group.avgPoints = avgPoints;
   group.communityScore = communityScore;
   group.topGamers = topGamers;
 
-  await group.save();
+  await group.save({ session });
+
+  return group;
 };
