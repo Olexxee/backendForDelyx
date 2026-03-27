@@ -3,6 +3,14 @@ import * as fixtureDb from "../models/fixtureSchemaService.js";
 import * as tournamentDb from "../models/tournamentSchemaService.js";
 import * as userService from "../user/userService.js";
 import * as userStatsService from "../user/statschemaService.js";
+import {
+  serializeTournamentSummary,
+  serializeTournamentDetail,
+  serializeParticipant,
+  serializeFixture,
+  buildTournamentStandings,
+} from "../lib/tournamentSerializer.js";
+
 import * as membershipSchemaService from "../groupLogic/membershipSchemaService.js";
 import * as groupDb from "../groupLogic/gSchemaService.js";
 import Group from "../groupLogic/groupSchema.js";
@@ -146,7 +154,7 @@ export const createTournament = async ({ data }) => {
     $set: { lastTournamentAt: new Date() },
   });
 
-  await updateGroupMetrics(data.groupId);
+  await updateGroupMetrics({ groupId: data.groupId });
 
   try {
     await scheduleTournamentJobs(tournament);
@@ -223,10 +231,7 @@ export const generateTournamentFixturesCore = async ({
     { session },
   );
 
-  await updateGroupMetrics(
-    tournament.groupId._id || tournament.groupId,
-    session,
-  );
+ await updateGroupMetrics({ groupId: tournament.groupId._id || tournament.groupId, session });
 
   return {
     fixtures: createdFixtures,
@@ -239,52 +244,77 @@ export const generateTournamentFixturesCore = async ({
 // GET TOURNAMENT BY ID
 // ============================================================
 
-export const getTournamentById = async ({ tournamentId, userId = null }) => {
-  const tournament = await ensureTournamentExists({ tournamentId });
+export const getTournamentById = async (tournamentId, viewerId = null) => {
+  const tournament = await tournamentDb.findTournamentById(tournamentId);
 
-  const participantDetails = await Promise.all(
-    (tournament.participants ?? []).map(async (participant) => {
-      try {
-        const participantUserId = participant.userId ?? participant;
-        const user = await userService.getUserById(participantUserId);
+  if (!tournament) {
+    throw new NotFoundException("Tournament not found");
+  }
 
-        return {
-          userId: user._id,
-          username: user.username,
-          profilePicture: user.profilePicture ?? null,
-          status: participant.status ?? "active",
-        };
-      } catch {
-        return null;
-      }
+  const participantIds =
+    tournament.participants
+      ?.map((participant) => participant.userId?.toString?.())
+      .filter(Boolean) || [];
+
+  const participantUsers = participantIds.length
+    ? await Promise.all(
+        participantIds.map((userId) => userService.findUserById(userId)),
+      )
+    : [];
+
+  const participantUserMap = new Map(
+    participantUsers
+      .filter(Boolean)
+      .map((user) => [user._id.toString(), user]),
+  );
+
+  const participants = (tournament.participants || []).map((participant) => {
+    const user = participantUserMap.get(participant.userId?.toString?.());
+    return serializeParticipant({ participant, user });
+  });
+
+  const fixtureResult = await fixtureService.getTournamentFixtures(tournamentId);
+  const rawFixtures = fixtureResult?.fixtures || [];
+
+  const fixtureUserIds = rawFixtures.flatMap((fixture) => [
+    fixture.homeTeam?.toString?.(),
+    fixture.awayTeam?.toString?.(),
+  ]).filter(Boolean);
+
+  const uniqueFixtureUserIds = [...new Set(fixtureUserIds)];
+  const fixtureUsers = uniqueFixtureUserIds.length
+    ? await Promise.all(
+        uniqueFixtureUserIds.map((userId) => userService.findUserById(userId)),
+      )
+    : [];
+
+  const fixtureUserMap = new Map(
+    fixtureUsers
+      .filter(Boolean)
+      .map((user) => [user._id.toString(), user]),
+  );
+
+  const fixtures = rawFixtures.map((fixture) =>
+    serializeFixture({
+      fixture,
+      homeUser: fixtureUserMap.get(fixture.homeTeam?.toString?.()),
+      awayUser: fixtureUserMap.get(fixture.awayTeam?.toString?.()),
     }),
   );
 
-  const participants = participantDetails.filter(Boolean);
+  const standings = await buildTournamentStandings({
+    tournament,
+    getUsersByIds: async (ids) =>
+      Promise.all(ids.map((id) => userService.findUserById(id))),
+  });
 
-  const userContext = userId
-    ? (() => {
-        const match = (tournament.participants ?? []).find(
-          (participant) =>
-            getObjectIdString(participant.userId ?? participant) ===
-            userId.toString(),
-        );
-
-        return {
-          isRegistered: Boolean(match),
-          role: match?.status ?? null,
-        };
-      })()
-    : {
-        isRegistered: false,
-        role: null,
-      };
-
-  return {
-    ...tournament.toObject(),
+  return serializeTournamentDetail({
+    tournament,
     participants,
-    userContext,
-  };
+    fixtures,
+    standings,
+    viewerId,
+  });
 };
 
 
@@ -292,8 +322,15 @@ export const getTournamentById = async ({ tournamentId, userId = null }) => {
 // GET GROUP TOURNAMENTS
 // ============================================================
 
-export const getGroupTournaments = async ({ groupId, status }) => {
-  return tournamentDb.findTournamentsByGroup({ groupId, status });
+export const getGroupTournaments = async (groupId, status, viewerId = null) => {
+  const tournaments = await tournamentDb.findGroupTournaments(groupId, status);
+
+  return tournaments.map((tournament) =>
+    serializeTournamentSummary({
+      tournament,
+      viewerId,
+    }),
+  );
 };
 
 
@@ -301,173 +338,138 @@ export const getGroupTournaments = async ({ groupId, status }) => {
 // GET ALL TOURNAMENTS
 // ============================================================
 
-export const getAllTournaments = async ({ page = 1, limit = 10, status }) => {
-  const skip = (page - 1) * limit;
-  const filter = {};
-
-  if (status) {
-    filter.status = status;
-  }
-
-  const [tournaments, total] = await Promise.all([
-    tournamentDb.findAllTournaments(filter, { skip, limit }),
-    tournamentDb.countTournaments(filter),
-  ]);
-
-  const totalPages = Math.ceil(total / limit);
+export const getAllTournaments = async ({ page = 1, limit = 10, status, viewerId = null }) => {
+  const result = await tournamentDb.findAllTournaments({
+    page,
+    limit,
+    status,
+  });
 
   return {
-    tournaments,
-    pagination: {
-      total,
-      totalPages,
-      currentPage: page,
-      limit,
-      hasNextPage: page < totalPages,
-    },
+    tournaments: result.tournaments.map((tournament) =>
+      serializeTournamentSummary({
+        tournament,
+        viewerId,
+      }),
+    ),
+    pagination: result.pagination,
   };
 };
-
 
 // ============================================================
 // JOIN GROUP AND TOURNAMENT
 // ============================================================
 
 export const joinGroupAndTournament = async ({ tournamentId, userId }) => {
+  const tournament = await tournamentDb.findTournamentById(tournamentId);
+
+  if (!tournament) {
+    throw new NotFoundException("Tournament not found");
+  }
+
+  if (tournament.status !== "registration") {
+    throw new BadRequestError("Tournament registration is closed");
+  }
+
+  if (new Date(tournament.registrationDeadline) < new Date()) {
+    throw new BadRequestError("Registration deadline has passed");
+  }
+
+  if (tournament.currentParticipants >= tournament.maxParticipants) {
+    throw new BadRequestError("Tournament is full");
+  }
+
+  const existingParticipant = tournament.participants.find(
+    (participant) =>
+      participant.userId?.toString() === userId.toString() &&
+      participant.status !== "withdrawn",
+  );
+
+  if (existingParticipant) {
+    throw new BadRequestError("You are already registered for this tournament");
+  }
+
   const session = await mongoose.startSession();
 
   try {
-    session.startTransaction();
+    await session.withTransaction(async () => {
+      await groupService.joinGroup(tournament.groupId, userId, { session });
 
-    const tournament = await ensureTournamentExists({ tournamentId, session });
-    const groupId = tournament.groupId._id ?? tournament.groupId;
-
-    if (tournament.status !== "registration") {
-      throw new BadRequestError("Tournament registration is closed");
-    }
-
-    if (new Date() > new Date(tournament.registrationDeadline)) {
-      throw new BadRequestError("Registration deadline has passed");
-    }
-
-    const capacityCheck = await tournamentDb.checkTournamentCapacity(
-      tournamentId,
-      { session },
-    );
-
-    if (capacityCheck.isFull) {
-      throw new BadRequestError("Tournament is full");
-    }
-
-    const alreadyRegistered = await tournamentDb.findUserInTournament(
-      tournamentId,
-      userId,
-      { session },
-    );
-
-    if (alreadyRegistered) {
-      throw new ConflictException("Already registered for this tournament");
-    }
-
-    const existingMembership = await membershipSchemaService.findMembership({
-      userId,
-      groupId,
-      session,
-    });
-
-    if (!existingMembership) {
-      await membershipSchemaService.createMembership(
-        {
-          userId,
-          groupId,
-          roleInGroup: "member",
-          status: "active",
-        },
-        session,
-      );
-
-      await groupDb.updateGroup(
-        groupId,
-        { $inc: { totalMembers: 1 } },
-        session,
-      );
-
-      const group = await groupDb.findGroupById(groupId, session);
-
-      await userService.findAndUpdateUserById(
+      const updatedTournament = await tournamentDb.addParticipant(
+        tournamentId,
         userId,
-        { $addToSet: { groups: group.name } },
-        session,
-      );
-    } else if (existingMembership.status === "banned") {
-      throw new ForbiddenError("You are banned from this group");
-    } else if (existingMembership.status !== "active") {
-      await membershipSchemaService.updateMembership(
-        { userId, groupId },
-        { status: "active" },
-        { new: true },
-        session,
+        {
+          session,
+          participantStatus: "registered",
+        },
       );
 
-      await groupDb.updateGroup(
-        groupId,
-        { $inc: { totalMembers: 1 } },
-        session,
-      );
-    }
-
-    const updatedTournament = await tournamentDb.addParticipant(
-      tournamentId,
-      userId,
-      { session },
-    );
-
-    if (!updatedTournament) {
-      throw new ConflictException("Already registered for this tournament");
-    }
-
-    await Promise.all([
-  userStatsService.getOrCreateUserStat(
-    {
-      userId,
-      scopeType: "global",
-    },
-    { session },
-  ),
-  userStatsService.getOrCreateUserStat(
-    {
-      userId,
-      scopeType: "group",
-      groupId,
-    },
-    { session },
-  ),
-  userStatsService.getOrCreateUserStat(
-    {
-      userId,
-      scopeType: "tournament",
-      tournamentId,
-    },
-    { session },
-  ),
-]);
-
-    await updateGroupMetrics(groupId, session);
-
-    await session.commitTransaction();
-
-    return {
-      tournament: updatedTournament,
-      message: "Successfully joined group and registered for tournament",
-    };
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
+      if (!updatedTournament) {
+        throw new BadRequestError("Failed to register for tournament");
+      }
+    });
   } finally {
     await session.endSession();
   }
+
+  const serializedTournament = await getTournamentById(tournamentId, userId);
+
+  return {
+    message: "Successfully joined group and registered for tournament",
+    tournament: serializedTournament,
+  };
 };
 
+export const leaveTournament = async ({ tournamentId, userId }) => {
+  const tournament = await tournamentDb.findTournamentById(tournamentId);
+
+  if (!tournament) {
+    throw new NotFoundException("Tournament not found");
+  }
+
+  const participant = tournament.participants.find(
+    (entry) =>
+      entry.userId?.toString() === userId.toString() &&
+      entry.status !== "withdrawn",
+  );
+
+  if (!participant) {
+    throw new BadRequestError("You are not registered for this tournament");
+  }
+
+  if (tournament.status !== "registration") {
+    throw new BadRequestError("You can only leave during registration");
+  }
+
+  if (new Date(tournament.registrationDeadline) < new Date()) {
+    throw new BadRequestError("Registration deadline has passed");
+  }
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.withTransaction(async () => {
+      const updatedTournament = await tournamentDb.removeParticipant(
+        tournamentId,
+        userId,
+        { session },
+      );
+
+      if (!updatedTournament) {
+        throw new NotFoundException("Tournament not found");
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  const serializedTournament = await getTournamentById(tournamentId, userId);
+
+  return {
+    message: "Successfully left tournament",
+    tournament: serializedTournament,
+  };
+};
 
 // ============================================================
 // GET TOURNAMENT FIXTURES
@@ -720,7 +722,7 @@ export const updateTournamentStatus = async ({ tournamentId, newStatus }) => {
   }
 
   await cache.deleteByPattern(`tournament:${tournamentId}:*`);
-  await updateGroupMetrics(groupId);
+  await updateGroupMetrics({ groupId });
 
   return tournament;
 };

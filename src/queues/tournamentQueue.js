@@ -1,6 +1,6 @@
-import { bullMQRedis } from "./bullmqRedis.js";
+import client from "./bullmqRedis.js";
 import { Queue } from "bullmq";
 
 export const tournamentQueue = new Queue("tournamentQueue", {
-  connection: bullMQRedis,
+  connection: client,
 });

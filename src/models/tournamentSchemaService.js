@@ -152,27 +152,22 @@ export const addParticipant = async (
   );
 };
 
-export const removeParticipant = async (
-  tournamentId,
-  userId,
-  options = {},
-) => {
+export const removeParticipant = async (tournamentId, userId, options = {}) => {
   const { session } = options;
 
-  return Tournament.findOneAndUpdate(
-    {
-      _id: tournamentId,
-      "participants.userId": userId,
-    },
-    {
-      $pull: { participants: { userId } },
-      $inc: { currentParticipants: -1 },
-    },
-    {
-      new: true,
-      session,
-    },
+  const tournament = await Tournament.findById(tournamentId).session(session);
+
+  if (!tournament) return null;
+
+  tournament.participants = tournament.participants.filter(
+    (participant) => participant.userId?.toString() !== userId.toString(),
   );
+
+  tournament.currentParticipants = tournament.participants.length;
+
+  await tournament.save({ session });
+
+  return tournament;
 };
 
 export const findUserInTournament = async (
@@ -247,6 +242,8 @@ export const getUserRoleInTournament = async (
 
   return participant?.status ?? null;
 };
+
+
 
 // ============================================================
 // USER TOURNAMENT QUERIES

@@ -78,3 +78,4 @@ export const serializeGroup = (group) => {
     updatedAt: group.updatedAt,
   };
 };
+

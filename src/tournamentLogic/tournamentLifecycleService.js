@@ -2,10 +2,7 @@ import mongoose from "mongoose";
 import * as fixtureDb from "../models/fixtureSchemaService.js";
 import * as tournamentDb from "../models/tournamentSchemaService.js";
 import cache from "../lib/cache.js";
-import {
-  NotFoundException,
-  BadRequestError,
-} from "../lib/classes/errorClasses.js";
+import { NotFoundException, BadRequestError } from "../lib/classes/errorClasses.js";
 import {
   checkTournamentReadiness,
   generateTournamentFixturesCore,
@@ -18,9 +15,7 @@ export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
   try {
     session.startTransaction();
 
-    const tournament = await tournamentDb.findTournamentById(tournamentId, {
-      session,
-    });
+    const tournament = await tournamentDb.findTournamentById(tournamentId, { session });
 
     if (!tournament) {
       throw new NotFoundException("Tournament not found");
@@ -37,10 +32,7 @@ export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
       };
     }
 
-   const readiness = await checkTournamentReadiness({
-  tournamentId,
-  session,
-});
+    const readiness = await checkTournamentReadiness({ tournamentId, session });
 
     if (!readiness.canStart) {
       throw new BadRequestError(
@@ -48,9 +40,7 @@ export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
       );
     }
 
-    const fixturesExist = await fixtureDb.fixturesExist(tournamentId, {
-      session,
-    });
+    const fixturesExist = await fixtureDb.fixturesExist(tournamentId, { session });
 
     if (!fixturesExist) {
       await generateTournamentFixturesCore({ tournamentId, session });
@@ -59,14 +49,12 @@ export const autoStartTournamentFromDeadline = async ({ tournamentId }) => {
     tournament.status = "ongoing";
     tournament.startDate = new Date();
     tournament.currentMatchday = tournament.currentMatchday || 1;
-
     await tournament.save({ session });
 
     const groupId = tournament.groupId._id ?? tournament.groupId;
-    await updateGroupMetrics(groupId, session);
+    await updateGroupMetrics({ groupId, session });
 
     await session.commitTransaction();
-
     await cache.deleteByPattern(`tournament:${tournamentId}:*`);
 
     return {
@@ -87,9 +75,7 @@ export const autoCompleteTournament = async ({ tournamentId }) => {
   try {
     session.startTransaction();
 
-    const tournament = await tournamentDb.findTournamentById(tournamentId, {
-      session,
-    });
+    const tournament = await tournamentDb.findTournamentById(tournamentId, { session });
 
     if (!tournament) {
       throw new NotFoundException("Tournament not found");
@@ -116,10 +102,9 @@ export const autoCompleteTournament = async ({ tournamentId }) => {
     await tournament.save({ session });
 
     const groupId = tournament.groupId._id ?? tournament.groupId;
-    await updateGroupMetrics(groupId, session);
+    await updateGroupMetrics({ groupId, session });
 
     await session.commitTransaction();
-
     await cache.deleteByPattern(`tournament:${tournamentId}:*`);
 
     return {
