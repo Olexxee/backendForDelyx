@@ -47,14 +47,34 @@ export const findTournamentsByStatus = async (status, options = {}) => {
 };
 
 export const findAllTournaments = async (
-  filter = {},
-  { skip = 0, limit = 10, session, sort = { createdAt: -1 } } = {},
+  { page = 1, limit = 10, status } = {},
+  options = {},
 ) => {
-  return Tournament.find(filter)
-    .sort(sort)
-    .skip(skip)
-    .limit(limit)
-    .session(session || null);
+  const { session, sort = { createdAt: -1 } } = options;
+
+  const filter = status ? { status } : {};
+  const skip = (page - 1) * limit;
+
+  const [tournaments, total] = await Promise.all([
+    Tournament.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .session(session || null),
+    Tournament.countDocuments(filter).session(session || null),
+  ]);
+
+  return {
+    tournaments,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page * limit < total,
+      hasPrevPage: page > 1,
+    },
+  };
 };
 
 export const countTournaments = async (filter = {}, options = {}) => {
@@ -62,18 +82,13 @@ export const countTournaments = async (filter = {}, options = {}) => {
   return Tournament.countDocuments(filter).session(session || null);
 };
 
-export const findTournamentsByGroup = async (
-  { groupId, status },
-  options = {},
-) => {
+export const findGroupTournaments = async (groupId, status, options = {}) => {
   const { session, populate = [] } = options;
 
-  const queryObject = { groupId };
-  if (status) {
-    queryObject.status = status;
-  }
+  const filter = { groupId };
+  if (status) filter.status = status;
 
-  let query = Tournament.find(queryObject)
+  let query = Tournament.find(filter)
     .sort({ createdAt: -1 })
     .session(session || null);
 

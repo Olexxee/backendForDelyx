@@ -28,6 +28,34 @@ export const getTournamentFixtures = async (
     .session(session || null);
 };
 
+export const findFixtureById = async (fixtureId, options = {}) => {
+  const { session } = options;
+  return Fixture.findById(fixtureId)
+    .populate("homeTeam", "username profilePicture")
+    .populate("awayTeam", "username profilePicture")
+    .session(session || null);
+};
+
+export const getUserUpcomingFixtures = async (
+  tournamentId,
+  userId,
+  options = {},
+) => {
+  const { session, limit = 10 } = options;
+
+  return Fixture.find({
+    tournamentId,
+    isCompleted: false,
+    status: "scheduled",
+    $or: [{ homeTeam: userId }, { awayTeam: userId }],
+  })
+    .populate("homeTeam", "username profilePicture")
+    .populate("awayTeam", "username profilePicture")
+    .sort({ matchday: 1, createdAt: 1 })
+    .limit(limit)
+    .session(session || null);
+};
+
 export const getMatchdayFixtures = async (
   tournamentId,
   matchday,

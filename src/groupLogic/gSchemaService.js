@@ -1,4 +1,4 @@
-import Group from "../groupLogic/groupSchema.js";
+import Group from "./groupSchema.js";
 
 // ============================================================
 // CREATE
@@ -30,10 +30,7 @@ export const findGroupById = async (groupId, options = {}) => {
   return query;
 };
 
-export const findGroupsByIds = async (
-  ids,
-  options = {},
-) => {
+export const findGroupsByIds = async (ids, options = {}) => {
   const { session, populateChatRoom = false, lean = true } = options;
 
   let query = Group.find({ _id: { $in: ids } }).session(session || null);
@@ -73,6 +70,70 @@ export const findGroupByJoinCode = async (joinCode, options = {}) => {
 export const findGroupsCreatedByUser = async (userId, options = {}) => {
   const { session } = options;
   return Group.find({ createdBy: userId }).session(session || null);
+};
+
+export const findUserGroupsWithLastMessage = async ({
+  groupIds,
+  skip = 0,
+  limit = 20,
+}) => {
+  if (!Array.isArray(groupIds) || groupIds.length === 0) {
+    return [];
+  }
+
+  return Group.aggregate([
+    { $match: { _id: { $in: groupIds } } },
+
+    {
+      $lookup: {
+        from: "chatrooms",
+        localField: "chatRoom",
+        foreignField: "_id",
+        as: "chatRoomDoc",
+      },
+    },
+    {
+      $unwind: {
+        path: "$chatRoomDoc",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    {
+      $sort: {
+        "chatRoomDoc.lastMessageAt": -1,
+      },
+    },
+
+    { $skip: skip },
+    { $limit: limit },
+
+    {
+      $lookup: {
+        from: "media",
+        localField: "avatar",
+        foreignField: "_id",
+        as: "avatarDoc",
+      },
+    },
+    {
+      $unwind: {
+        path: "$avatarDoc",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        avatar: "$avatarDoc.url",
+        chatRoomId: "$chatRoomDoc._id",
+        lastMessage: "$chatRoomDoc.lastMessagePreview",
+        lastMessageAt: "$chatRoomDoc.lastMessageAt",
+      },
+    },
+  ]);
 };
 
 // ============================================================

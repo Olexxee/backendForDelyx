@@ -15,15 +15,18 @@ export const findMembersByGroupId = async (groupId) => {
   return Membership.find({ groupId, status: "active" }).sort({ joinedAt: 1 });
 };
 
+
 // Get all memberships for a user
 export const findGroupsByUser = async (
   { userId, status = "active" },
-  { skip = 0, limit = 20 } = {},
+  options = {},
 ) => {
+  const { session = null } = options;
+
   return Membership.find({ userId, status })
-    .sort({ joinedAt: -1 })
-    .skip(skip)
-    .limit(limit);
+    .select("groupId")
+    .session(session)
+    .lean();
 };
 
 export const getMemberPreview = async (groupId) => {

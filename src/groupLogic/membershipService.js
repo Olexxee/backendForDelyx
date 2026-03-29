@@ -1,12 +1,9 @@
 import mongoose from "mongoose";
-
 import * as membershipDb from "./membershipSchemaService.js";
 import * as userService from "../user/userService.js";
 import * as userStats from "../user/statschemaService.js";
 import * as groupDb from "./gSchemaService.js";
-
 import { notificationQueue } from "../queues/notificationQueue.js";
-
 import {
   NotFoundException,
   ConflictException,
@@ -133,6 +130,14 @@ export const findAllMembersInGroup = async ({
     { groupId, status: "active" },
     { skip, limit },
   );
+};
+
+// ============================================================
+// GET ALL GROUPS FOR USER
+// ============================================================
+
+export const findGroupsByUser = async ({ userId, status = "active" }) => {
+  return membershipDb.findGroupsByUser({ userId, status });
 };
 
 // ============================================================

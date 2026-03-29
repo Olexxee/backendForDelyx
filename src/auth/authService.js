@@ -16,7 +16,7 @@ import { enqueueNotificationJob } from "../queues/notificationQueue.js";
 /* ================= AUTHENTICATION ================= */
 
 export const authenticateUser = async ({ email, password }) => {
-  const user = await userService.findUserByEmailWithPassword({ email });
+  const user = await userService.findUserByEmail({ email });
   if (!user) throw new UnauthorizedException("Invalid credentials");
 
   const isValidPassword = await bcrypt.compare(password, user.password);

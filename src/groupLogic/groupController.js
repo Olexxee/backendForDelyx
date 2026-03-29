@@ -5,21 +5,24 @@ import { createGroupSchema } from "./groupRequestSchema.js";
 import { processUploadedMedia } from "../middlewares/processUploadedImages.js";
 import {
   ValidationException,
-  NotFoundException,
 } from "../lib/classes/errorClasses.js";
 
 const validator = new ValidatorClass();
 
-// GET GROUP BY NAME
+// =====================================================
+// SEARCH GROUP BY NAME
+// =====================================================
+
 export const searchGroupByName = asyncWrapper(async (req, res) => {
   const { name } = req.params;
   const groups = await groupService.searchGroupsByName({ name });
   res.status(200).json({ success: true, groups });
 });
 
-// ==================================================
+// =====================================================
 // CREATE GROUP
-// ==================================================
+// =====================================================
+
 export const createGroup = asyncWrapper(async (req, res) => {
   const value = validator.validate(createGroupSchema, req.body);
 
@@ -37,7 +40,6 @@ export const createGroup = asyncWrapper(async (req, res) => {
     },
   );
 
-  // 4️⃣ Delegate to service
   const result = await groupService.createGroup({
     userId: req.user._id,
     name: value.name,
@@ -53,6 +55,10 @@ export const createGroup = asyncWrapper(async (req, res) => {
   });
 });
 
+// =====================================================
+// GET GROUP OVERVIEW
+// =====================================================
+
 export const getGroupOverview = asyncWrapper(async (req, res) => {
   const { groupId } = req.params;
 
@@ -67,9 +73,10 @@ export const getGroupOverview = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
-// UPDATE GROUP MEDIA (AVATAR/BANNER)
-// ==================================================
+// =====================================================
+// UPDATE GROUP MEDIA
+// =====================================================
+
 export const updateGroupMedia = asyncWrapper(async (req, res) => {
   if (!req.files || (!req.files.avatar && !req.files.banner)) {
     throw new ValidationException("No files uploaded");
@@ -119,9 +126,33 @@ export const updateGroupMedia = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
-// JOIN GROUP
-// ==================================================
+// =====================================================
+// REQUEST TO JOIN GROUP
+// =====================================================
+
+export const requestToJoinGroup = asyncWrapper(async (req, res) => {
+  const { groupId } = req.params;
+
+  const result = await groupService.requestToJoinGroup({
+    userId: req.user._id,
+    groupId,
+  });
+
+  const isPending = result.status === "pending";
+
+  res.status(isPending ? 202 : 200).json({
+    success: true,
+    message: isPending
+      ? "Join request sent. Awaiting admin approval."
+      : "Successfully joined the group",
+    membership: result,
+  });
+});
+
+// =====================================================
+// JOIN GROUP BY INVITE
+// =====================================================
+
 export const joinGroupByInvite = asyncWrapper(async (req, res) => {
   const joined = await groupService.joinGroupByInvite(
     req.params.joinCode,
@@ -135,9 +166,10 @@ export const joinGroupByInvite = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
+// =====================================================
 // LEAVE GROUP
-// ==================================================
+// =====================================================
+
 export const leaveGroup = asyncWrapper(async (req, res) => {
   await groupService.leaveGroup(req.user._id, req.params.groupId);
 
@@ -147,9 +179,68 @@ export const leaveGroup = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
+// =====================================================
+// APPROVE JOIN REQUEST
+// =====================================================
+
+export const approveJoinRequest = asyncWrapper(async (req, res) => {
+  const { groupId, userId: targetUserId } = req.params;
+
+  const result = await groupService.approveGroupJoinRequest({
+    adminId: req.user._id,
+    groupId,
+    targetUserId,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Join request approved",
+    membership: result,
+  });
+});
+
+// =====================================================
+// REJECT JOIN REQUEST
+// =====================================================
+
+export const rejectJoinRequest = asyncWrapper(async (req, res) => {
+  const { groupId, userId: targetUserId } = req.params;
+
+  await groupService.rejectGroupJoinRequest({
+    adminId: req.user._id,
+    groupId,
+    targetUserId,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Join request rejected",
+  });
+});
+
+// =====================================================
+// GET PENDING JOIN REQUESTS
+// =====================================================
+
+export const getPendingJoinRequests = asyncWrapper(async (req, res) => {
+  const { groupId } = req.params;
+
+  // Verify caller is admin before fetching
+  const requests = await membershipService.getPendingRequests({
+    adminId: req.user._id,
+    groupId,
+  });
+
+  res.status(200).json({
+    success: true,
+    requests,
+  });
+});
+
+// =====================================================
 // KICK USER
-// ==================================================
+// =====================================================
+
 export const kickUserFromGroup = asyncWrapper(async (req, res) => {
   await groupService.kickUserFromGroup({
     adminId: req.user._id,
@@ -163,9 +254,10 @@ export const kickUserFromGroup = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
+// =====================================================
 // CHANGE MEMBER ROLE
-// ==================================================
+// =====================================================
+
 export const changeMemberRole = asyncWrapper(async (req, res) => {
   const updated = await groupService.changeMemberRole({
     adminId: req.user._id,
@@ -181,9 +273,10 @@ export const changeMemberRole = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
+// =====================================================
 // GENERATE INVITE LINK
-// ==================================================
+// =====================================================
+
 export const generateInviteLink = asyncWrapper(async (req, res) => {
   const invite = await groupService.generateInviteLink({
     adminId: req.user._id,
@@ -197,79 +290,18 @@ export const generateInviteLink = asyncWrapper(async (req, res) => {
   });
 });
 
-// ==================================================
-// REQUEST TO JOIN GROUP
-// ==================================================
-export const requestToJoinGroup = asyncWrapper(async (req, res) => {
-  const { groupId } = req.params;
-
-  console.log(`User ${req.user._id} is requesting to join group ${groupId}`);
-
-  const result = await groupService.requestToJoinGroup({
-    userId: req.user._id,
-    groupId,
-  });
-
-  // Public group → joined immediately; private → pending
-  const isPending = result.status === "pending";
-
-  res.status(isPending ? 202 : 200).json({
-    success: true,
-    message: isPending
-      ? "Join request sent. Awaiting admin approval."
-      : "Successfully joined the group",
-    membership: result,
-  });
-});
-
-// ==================================================
-// RESOLVE JOIN REQUEST (ADMIN: APPROVE / REJECT)
-// ==================================================
-export const resolveJoinRequest = asyncWrapper(async (req, res) => {
-  const { groupId, userId: targetUserId } = req.params;
-  const { action } = req.body; // "approve" | "reject"
-
-  const result = await groupService.resolveJoinRequest({
-    adminId: req.user._id,
-    groupId,
-    targetUserId,
-    action,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: `Join request ${action}d`,
-    result,
-  });
-});
-
-// ==================================================
-// GET PENDING JOIN REQUESTS (ADMIN)
-// ==================================================
-export const getPendingJoinRequests = asyncWrapper(async (req, res) => {
-  const { groupId } = req.params;
-
-  const requests = await groupService.getPendingJoinRequests({
-    adminId: req.user._id,
-    groupId,
-  });
-
-  res.status(200).json({
-    success: true,
-    requests,
-  });
-});
+// =====================================================
+// GET MY GROUPS
+// =====================================================
 
 export const getMyGroups = asyncWrapper(async (req, res) => {
-  const userId = req.user.id;
-
   const groups = await groupService.getUserGroupsWithLastMessage({
-    userId,
+    userId: req.user._id,
   });
 
   res.set("Cache-Control", "no-store");
 
-  return res.status(200).json({
+  res.status(200).json({
     success: true,
     data: groups,
   });

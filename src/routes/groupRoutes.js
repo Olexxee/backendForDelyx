@@ -11,7 +11,7 @@ import {
   updateGroupMedia,
   getGroupOverview,
   requestToJoinGroup,
-  resolveJoinRequest,
+  approveJoinRequest,
   getPendingJoinRequests,
 } from "../groupLogic/groupController.js";
 import { getDiscoverGroups } from "../groupLogic/discoverGroupsController.js";
@@ -76,7 +76,7 @@ groupRouter.post(
   "/:groupId/join-requests/:userId",
   authMiddleware,
   requireGroupAdmin,
-  resolveJoinRequest,
+  approveJoinRequest,
 );
 
 // -----------------------
