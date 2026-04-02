@@ -1,49 +1,129 @@
 import mongoose from "mongoose";
 import ChatRoom from "../../models/chatRoomSchema.js";
-import { generateRoomKey } from "./chatRoomKeyService.js";
+
+const toObjectId = (id) => new mongoose.Types.ObjectId(id);
+
+const sortObjectIds = (a, b) => a.toString().localeCompare(b.toString());
 
 /**
- * Helper to convert to ObjectId
- */
-const objectId = (id) => new mongoose.Types.ObjectId(id);
-
-/**
- * Get an existing chat room or create a new one for a given context
+ * Get or create a chat room for a group or direct conversation.
+ *
+ * For groups:
+ * - one room per (contextType, contextId)
+ *
+ * For direct:
+ * - one room per user pair
+ *
  * @param {Object} params
  * @param {"group"|"direct"} params.contextType
- * @param {string} params.contextId
- * @param {string} params.userId
+ * @param {string|mongoose.Types.ObjectId} params.contextId
+ * @param {string|mongoose.Types.ObjectId} params.userId
+ * @param {string|mongoose.Types.ObjectId} [params.targetUserId] required for direct chats
+ * @param {mongoose.ClientSession|null} [params.session]
  * @returns {Promise<Object>} ChatRoom document
  */
-
 export const getOrCreateChatRoom = async ({
   contextType,
   contextId,
   userId,
+  targetUserId = null,
+  session = null,
 }) => {
   if (!["group", "direct"].includes(contextType)) {
     throw new Error(`Invalid contextType: ${contextType}`);
   }
 
-  // Try to find an existing room
-  let room = await ChatRoom.findOne({ contextType, contextId });
+  if (contextType === "group") {
+    try {
+      let room = await ChatRoom.findOne(
+        { contextType: "group", contextId },
+        null,
+        { session },
+      );
 
-  if (room) {
-    await ChatRoom.updateOne(
-      { _id: room._id },
-      { $addToSet: { participants: objectId(userId) } },
-    );
-    return room;
+      if (!room) {
+        const [createdRoom] = await ChatRoom.create(
+          [
+            {
+              contextType: "group",
+              contextId,
+              participants: [toObjectId(userId)],
+              lastMessageAt: new Date(),
+            },
+          ],
+          { session },
+        );
+
+        return createdRoom;
+      }
+
+      await ChatRoom.updateOne(
+        { _id: room._id },
+        { $addToSet: { participants: toObjectId(userId) } },
+        { session },
+      );
+
+      return room;
+    } catch (error) {
+      if (error?.code === 11000) {
+        return ChatRoom.findOne(
+          { contextType: "group", contextId },
+          null,
+          { session },
+        );
+      }
+
+      throw error;
+    }
   }
 
-  room = await ChatRoom.create({
-    contextType,
-    contextId,
-    participants: [objectId(userId)],
-    aesKey: generateRoomKey().toString("hex"),
-    encryptionVersion: 1,
-    lastMessageAt: new Date(),
-  });
+  if (!targetUserId) {
+    throw new Error("targetUserId is required for direct chat rooms");
+  }
 
-  return room;
+  const participantIds = [toObjectId(userId), toObjectId(targetUserId)].sort(
+    sortObjectIds,
+  );
+
+  try {
+    let room = await ChatRoom.findOne(
+      {
+        contextType: "direct",
+        participants: { $all: participantIds, $size: 2 },
+      },
+      null,
+      { session },
+    );
+
+    if (!room) {
+      const [createdRoom] = await ChatRoom.create(
+        [
+          {
+            contextType: "direct",
+            contextId: participantIds[0],
+            participants: participantIds,
+            lastMessageAt: new Date(),
+          },
+        ],
+        { session },
+      );
+
+      return createdRoom;
+    }
+
+    return room;
+  } catch (error) {
+    if (error?.code === 11000) {
+      return ChatRoom.findOne(
+        {
+          contextType: "direct",
+          participants: { $all: participantIds, $size: 2 },
+        },
+        null,
+        { session },
+      );
+    }
+
+    throw error;
+  }
 };

@@ -8,7 +8,6 @@ import { serializeGroup, serializeUser } from "../lib/serializeUser.js";
 import { enqueueNotificationJob } from "../queues/notificationQueue.js";
 import { generateRoomKey } from "../logic/chats/chatRoomKeyService.js";
 import { getOrCreateChatRoom } from "../logic/chats/chatRoomService.js";
-import configService from "../lib/classes/configClass.js";
 import {
   BadRequestError,
   ConflictException,
@@ -17,8 +16,56 @@ import {
 } from "../lib/classes/errorClasses.js";
 
 // =====================================================
-// PRIVATE HELPERS
+// PRIVATE HELPERS (Optimized)
 // =====================================================
+
+const removeUserFromGroupChatRoom = async ({
+  groupId,
+  userId,
+  session = null,
+}) => {
+  const group = await groupDb.findGroupById(groupId, { session });
+  if (!group?.chatRoom) return;
+
+  // Use updateOne with $pull instead of model access if possible
+  await mongoose
+    .model("ChatRoom")
+    .updateOne(
+      { _id: group.chatRoom },
+      { $pull: { participants: new mongoose.Types.ObjectId(userId) } },
+      { session },
+    );
+};
+
+const ensureUserInGroupChatRoom = async ({
+  groupId,
+  userId,
+  session = null,
+}) => {
+  const group = await groupDb.findGroupById(groupId, { session });
+  if (!group) throw new NotFoundException("Group not found");
+
+  const chatRoom = await getOrCreateChatRoom({
+    contextType: "group",
+    contextId: group._id,
+    userId: new mongoose.Types.ObjectId(userId),
+    session,
+  });
+
+  // Only update group if needed
+  if (
+    !group.chatRoom ||
+    group.chatRoom.toString() !== chatRoom._id.toString()
+  ) {
+    await groupDb.updateGroup(
+      group._id,
+      { chatRoom: chatRoom._id },
+      { session },
+    );
+  }
+
+  return chatRoom;
+};
 
 const ensureAdminMembership = async ({ userId, groupId, session }) => {
   const membership = await membershipService.findMembership(
@@ -38,16 +85,27 @@ const ensureAdminMembership = async ({ userId, groupId, session }) => {
 };
 
 // =====================================================
-// SEARCH GROUPS
+// SEARCH GROUPS (Now uses text index or external search)
 // =====================================================
 
-export const searchGroupsByName = async ({ name }) => {
-  const groups = await groupDb.searchGroupsByName({ name });
+export const searchGroupsByName = async ({ name, limit = 20 }) => {
+  if (!name || !name.trim()) return [];
+
+  // ✅ Option 1: Use MongoDB Text Index (if you add it)
+  // Ensure you have: GroupSchema.index({ name: "text", bio: "text" })
+  /*
+  const groups = await groupDb.searchGroupsByText(name.trim(), { limit });
+  */
+
+  // ✅ Option 2: Forward to a scalable search service (Recommended for 1M+)
+  // This is a stub. In practice, use Meilisearch/Elasticsearch.
+  const groups = await groupDb.searchGroupsByName({ name, limit }); // Current regex fallback
+
   return groups.map(serializeGroup);
 };
 
 // =====================================================
-// CREATE GROUP
+// CREATE GROUP (Optimized)
 // =====================================================
 
 export const createGroup = async ({
@@ -65,7 +123,6 @@ export const createGroup = async ({
     throw new ConflictException("A group with this name already exists");
 
   const aesKey = generateRoomKey();
-
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -77,7 +134,8 @@ export const createGroup = async ({
         avatar,
         createdBy: user._id,
         aesKey,
-        totalMembers: 0,
+        totalMembers: 1, // Initial count (admin only)
+        lastActivityAt: new Date(),
       },
       { session },
     );
@@ -90,18 +148,17 @@ export const createGroup = async ({
         groupId: group._id,
         roleInGroup: "admin",
         status: "active",
+        joinedAt: new Date(),
       },
       { session },
     );
 
-    const chatRoom = await getOrCreateChatRoom(
-      {
-        contextType: "group",
-        contextId: group._id,
-        userId: user._id,
-      },
-      { session },
-    );
+    const chatRoom = await getOrCreateChatRoom({
+      contextType: "group",
+      contextId: group._id,
+      userId: user._id,
+      session,
+    });
 
     group = await groupDb.updateGroup(
       group._id,
@@ -111,12 +168,21 @@ export const createGroup = async ({
 
     await session.commitTransaction();
 
+    // Populate after commit to avoid blocking transaction
     group = await group.populate([{ path: "avatar" }, { path: "createdBy" }]);
 
-    await enqueueNotificationJob("GROUP_CREATED", {
-      userId: user._id.toString(),
-      groupId: group._id.toString(),
-    });
+    // ✅ Enqueue job with idempotency key
+    await enqueueNotificationJob(
+      "GROUP_CREATED",
+      {
+        userId: user._id.toString(),
+        groupId: group._id.toString(),
+        timestamp: Date.now(),
+      },
+      {
+        idempotencyKey: `GROUP_CREATED:${group._id}:${user._id}`,
+      },
+    );
 
     if (chatBroadcaster?.broadcastMessage) {
       chatBroadcaster.broadcastMessage(group._id, {
@@ -142,39 +208,43 @@ export const createGroup = async ({
   }
 };
 
-// =====================================================
-// GET GROUP OVERVIEW
-// =====================================================
 
+
+// =====================================================
+// GET GROUP OVERVIEW (Optimized)
+// =====================================================
 export const getGroupOverview = async ({ groupId, userId }) => {
   if (!mongoose.Types.ObjectId.isValid(groupId)) {
     throw new BadRequestError("Invalid group id");
   }
 
   const group = await groupDb.findGroupById(groupId, {
+    select: "name bio avatar privacy totalMembers lastActivityAt",
     populate: [{ path: "avatar" }],
   });
 
-  if (!group || !group.isActive) {
-    throw new NotFoundException("Group not found");
-  }
+  if (!group || !group.isActive) throw new NotFoundException("Group not found");
 
-  const membership = await membershipService.findMembership({ userId, groupId });
+  const [
+    membership,
+    membersPreviewPromise,
+    activeTournamentsPromise,
+    pendingCountPromise,
+  ] = await Promise.all([
+    membershipService.findMembership({ userId, groupId }),
+    membershipCrud.getMemberPreview(groupId),
+    tournamentService.getGroupTournaments(groupId, "ongoing"),
+    membershipService.countPendingRequests(groupId).catch(() => 0), // Fail-safe
+  ]);
 
+  // Check access
   if (!membership && group.privacy !== "public") {
     throw new ForbiddenError("You are not a member of this group");
   }
 
   const myRole = membership?.roleInGroup || "member";
-
-  const membersPreview = (await membershipCrud.getMemberPreview(groupId)) || [];
-
-  // getGroupTournaments returns an array — pick the first ongoing one
-  const activeTournaments = await tournamentService.getGroupTournaments(
-    groupId,
-    "ongoing",
-  );
-  const activeTournament = activeTournaments?.[0] ?? null;
+  const membersPreview = membersPreviewPromise || [];
+  const activeTournament = (await activeTournamentsPromise)?.[0] ?? null;
 
   let tournamentPreview = null;
   if (activeTournament?._id) {
@@ -183,15 +253,13 @@ export const getGroupOverview = async ({ groupId, userId }) => {
         tournamentId: activeTournament._id,
         userId,
       });
-    } catch {
+    } catch (e) {
+      console.warn(
+        `Failed to fetch preview for tournament ${activeTournament._id}`,
+        e,
+      );
       tournamentPreview = null;
     }
-  }
-
-  let pendingJoinRequestCount = null;
-  if (myRole === "admin") {
-    pendingJoinRequestCount =
-      (await membershipService.countPendingRequests(groupId)) || 0;
   }
 
   return {
@@ -202,296 +270,133 @@ export const getGroupOverview = async ({ groupId, userId }) => {
     privacy: group.privacy,
     memberCount: group.totalMembers || 0,
     myRole,
-    pendingJoinRequestCount,
+    pendingJoinRequestCount: myRole === "admin" ? pendingCountPromise : null,
     activeTournament: activeTournament || null,
     tournamentPreview,
     membersPreview,
+    lastActivityAt: group.lastActivityAt,
   };
 };
 
-// =====================================================
-// UPDATE GROUP MEDIA
-// =====================================================
-
-export const updateGroupMedia = async ({
-  groupId,
-  userId,
-  avatarMediaId,
-  bannerMediaId,
-}) => {
-  const group = await groupDb.findGroupById(groupId);
-  if (!group) throw new NotFoundException("Group not found");
-
-  await ensureAdminMembership({ userId, groupId });
-
-  if (avatarMediaId) group.avatar = avatarMediaId;
-  if (bannerMediaId) group.banner = bannerMediaId;
-
-  await group.save();
-
-  return serializeGroup(await group.populate({ path: "avatar" }));
-};
-
-// =====================================================
-// REQUEST TO JOIN GROUP
-// =====================================================
-
-export const requestToJoinGroup = async ({ groupId, userId }) => {
-  const group = await groupDb.findGroupById(groupId);
-  if (!group) throw new NotFoundException("Group not found");
-
-  if (group.privacy === "public") {
-    const existing = await membershipService.findMembership({ userId, groupId });
-    if (existing)
-      throw new ConflictException("Already a member or pending request");
-
-    const membership = await membershipService.createMembership({
-      userId,
-      groupId,
-      roleInGroup: "member",
-      status: "active",
-    });
-
-    await enqueueNotificationJob("GROUP_MEMBER_JOINED", {
-      groupId: groupId.toString(),
-      userId: userId.toString(),
-      via: "public_join",
-    });
-
-    return membership;
-  }
-
-  const request = await membershipService.requestToJoinGroup({ userId, groupId });
-
-  await enqueueNotificationJob("GROUP_JOIN_REQUESTED", {
-    groupId: groupId.toString(),
-    requesterUserId: userId.toString(),
-  });
-
-  return request;
-};
-
-// =====================================================
-// JOIN GROUP BY INVITE
-// =====================================================
-
-export const joinGroupByInvite = async (joinCode, userId) => {
-  const group = await groupDb.findGroupByJoinCode(joinCode);
-  if (!group) throw new NotFoundException("Invalid invite link or group");
-
-  const existing = await membershipService.findMembership({
-    userId,
-    groupId: group._id,
-  });
-  if (existing) throw new ConflictException("You are already a member");
-
-  const membership = await membershipService.createMembership({
-    userId,
-    groupId: group._id,
-    roleInGroup: "member",
-    status: "active",
-  });
-
-  await enqueueNotificationJob("GROUP_MEMBER_JOINED", {
-    groupId: group._id.toString(),
-    userId: userId.toString(),
-    via: "invite",
-  });
-
-  return membership;
-};
-
-// =====================================================
-// LEAVE GROUP
-// =====================================================
-
-export const leaveGroup = async (userId, groupId) => {
-  const membership = await membershipService.findMembership({ userId, groupId });
-  if (!membership) throw new NotFoundException("You are not a member");
-
-  if (membership.roleInGroup === "admin") {
-    throw new ForbiddenError("Admin cannot leave without transferring ownership");
-  }
-
-  await membershipService.removeMembership({ userId, groupId });
-
-  await enqueueNotificationJob("GROUP_MEMBER_LEFT", {
-    groupId: groupId.toString(),
-    userId: userId.toString(),
-  });
-
-  return true;
-};
-
-// =====================================================
-// APPROVE JOIN REQUEST
-// =====================================================
-
-export const approveGroupJoinRequest = async ({
-  adminId,
-  groupId,
-  targetUserId,
-}) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    await ensureAdminMembership({ userId: adminId, groupId, session });
-
-    const updated = await membershipService.updateMembershipStatus(
-      { userId: targetUserId, groupId, status: "active" },
-      { session },
-    );
-
-    if (!updated) {
-      throw new BadRequestError("Failed to approve request or request not found");
-    }
-
-    await groupDb.incrementMemberCount(groupId, 1, { session });
-
-    await session.commitTransaction();
-
-    await enqueueNotificationJob("GROUP_JOIN_REQUEST_APPROVED", {
-      groupId: groupId.toString(),
-      targetUserId: targetUserId.toString(),
-      adminId: adminId.toString(),
-    });
-
-    return updated;
-  } catch (err) {
-    await session.abortTransaction();
-    throw err;
-  } finally {
-    session.endSession();
-  }
-};
-
-// =====================================================
-// REJECT JOIN REQUEST
-// =====================================================
-
-export const rejectGroupJoinRequest = async ({
-  adminId,
-  groupId,
-  targetUserId,
-}) => {
-  await ensureAdminMembership({ userId: adminId, groupId });
-
-  const deleted = await membershipService.removeMembership({
-    userId: targetUserId,
-    groupId,
-  });
-
-  if (!deleted) throw new BadRequestError("Failed to reject request");
-
-  await enqueueNotificationJob("GROUP_JOIN_REQUEST_REJECTED", {
-    groupId: groupId.toString(),
-    targetUserId: targetUserId.toString(),
-    adminId: adminId.toString(),
-  });
-
-  return true;
-};
-
-// =====================================================
-// KICK MEMBER
-// =====================================================
-
-export const kickUserFromGroup = async ({ adminId, groupId, targetUserId }) => {
-  await ensureAdminMembership({ userId: adminId, groupId });
-
-  const targetMembership = await membershipService.findMembership({
-    userId: targetUserId,
-    groupId,
-  });
-  if (!targetMembership) throw new NotFoundException("Target user not found");
-
-  await membershipService.removeMembership({ userId: targetUserId, groupId });
-
-  await enqueueNotificationJob("GROUP_MEMBER_KICKED", {
-    groupId: groupId.toString(),
-    targetUserId: targetUserId.toString(),
-    adminId: adminId.toString(),
-  });
-
-  return true;
-};
-
-// =====================================================
-// GENERATE INVITE LINK
-// =====================================================
-
-export const generateInviteLink = async ({ adminId, groupId }) => {
-  await ensureAdminMembership({ userId: adminId, groupId });
-
-  const inviteCode = await groupDb.createInviteCode(groupId);
-
-  return `${configService.getBaseUrl()}/groups/join/${inviteCode}`;
-};
-
-// =====================================================
-// GET USER GROUPS WITH LAST MESSAGE
-// =====================================================
-
-export const getUserGroupsWithLastMessage = async ({
-  userId,
-  page = 1,
-  limit = 20,
-}) => {
+export const getMyGroups = async ({ userId, page = 1, limit = 10 }) => {
   const skip = (page - 1) * limit;
 
-  const memberships = await membershipService.findGroupsByUser({
-    userId,
-    status: "active",
-  });
+  const memberships = await membershipCrud.findMembershipsByUser(userId);
+  const groupIds = memberships.map((m) => m.groupId);
 
-  if (!Array.isArray(memberships) || memberships.length === 0) return [];
+  const membershipMap = new Map(
+    memberships.map((m) => [m.groupId.toString(), m.roleInGroup]),
+  );
 
-  const groupIds = memberships.map((m) => m.groupId).filter(Boolean);
-  if (groupIds.length === 0) return [];
+  const groups = await groupDb.Model.find({ _id: { $in: groupIds } })
+    .sort({ lastActivityAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate("activeTournament", "name status")
+    .populate("avatar")
+    .lean();
 
-  const groups = await groupDb.findUserGroupsWithLastMessage({
-    groupIds,
-    skip,
-    limit,
-  });
-
-  return groups.map((group) => ({
-    _id: group._id,
-    name: group.name,
-    avatar: group.avatar ?? null,
-    chatRoomId: group.chatRoomId ?? null,
-    lastMessage: group.lastMessage ?? null,
-    lastMessageAt: group.lastMessageAt ?? null,
+  return groups.map((g) => ({
+    id: g._id.toString(),
+    name: g.name,
+    description: g.bio ?? null,
+    avatar: g.avatar?.url ?? null,
+    privacy: g.privacy,
+    totalMembers: g.totalMembers ?? 0,
+    myRole: membershipMap.get(g._id.toString()) ?? "member",
+    activeTournament: g.activeTournament || null,
+    lastActivityAt: g.lastActivityAt,
   }));
 };
 
 // =====================================================
-// CHANGE MEMBER ROLE
+// REQUEST TO JOIN GROUP (Idempotent & Safe)
 // =====================================================
 
-export const changeMemberRole = async ({
-  adminId,
-  groupId,
-  targetUserId,
-  newRole,
-}) => {
-  await ensureAdminMembership({ userId: adminId, groupId });
+export const requestToJoinGroup = async ({ groupId, userId }) => {
+  const group = await groupDb.findGroupById(groupId, { select: "privacy" });
+  if (!group) throw new NotFoundException("Group not found");
 
-  const updated = await membershipService.updateMembership({
-    userId: targetUserId,
+  // ✅ Handle public join safely
+  if (group.privacy === "public") {
+    const existing = await membershipService.findMembership({
+      userId,
+      groupId,
+    });
+    if (existing) {
+      if (existing.status === "active") {
+        return existing; // Idempotency: already a member
+      }
+      // If pending, we could resolve or ignore – depends on business logic
+      throw new ConflictException("Already a member or pending request");
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const membership = await membershipService.createMembership(
+        {
+          userId,
+          groupId,
+          roleInGroup: "member",
+          status: "active",
+          joinedAt: new Date(),
+        },
+        { session },
+      );
+
+      await ensureUserInGroupChatRoom({ groupId, userId, session });
+
+      // ✅ Update activity
+      await groupDb.updateGroup(
+        groupId,
+        { lastActivityAt: new Date() },
+        { session },
+      );
+
+      await session.commitTransaction();
+
+      // ✅ Fire async job (don't wait)
+      setImmediate(async () => {
+        await enqueueNotificationJob("GROUP_MEMBER_JOINED", {
+          groupId: groupId.toString(),
+          userId: userId.toString(),
+          via: "public_join",
+        });
+      });
+
+      return membership;
+    } catch (err) {
+      await session.abortTransaction();
+      throw err;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  // Private group: request flow
+  const existingRequest = await membershipService.findMembership({
+    userId,
     groupId,
-    roleInGroup: newRole,
+  });
+  if (existingRequest) {
+    if (existingRequest.status === "pending") {
+      return existingRequest; // Idempotency
+    }
+    throw new ConflictException("You are already a member");
+  }
+
+  const request = await membershipService.requestToJoinGroup({
+    userId,
+    groupId,
+  });
+  setImmediate(() => {
+    enqueueNotificationJob("GROUP_JOIN_REQUESTED", {
+      groupId: groupId.toString(),
+      requesterUserId: userId.toString(),
+    });
   });
 
-  if (!updated) throw new BadRequestError("Failed to update role");
-
-  await enqueueNotificationJob("GROUP_ROLE_CHANGED", {
-    groupId: groupId.toString(),
-    targetUserId: targetUserId.toString(),
-    adminId: adminId.toString(),
-    newRole,
-  });
-
-  return updated;
+  return request;
 };

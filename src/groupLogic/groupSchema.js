@@ -15,7 +15,7 @@ const GroupSchema = new Schema(
       trim: true,
     },
 
-    avatar: {
+    banner: {
       type: Types.ObjectId,
       ref: "Media",
       default: null,
@@ -46,7 +46,7 @@ const GroupSchema = new Schema(
 
     totalMembers: {
       type: Number,
-      default: 1,
+      default: 0,
       min: 0,
     },
 
@@ -90,13 +90,31 @@ const GroupSchema = new Schema(
       default: 0,
       min: 0,
     },
+
+    settings: {
+      type: Schema.Types.Mixed,
+      default: () => ({
+        allowMemberInvites: false,
+        allowMemberTournamentCreation: false,
+        requireJoinApproval: false,
+      }),
+    },
+
+    lastActivityAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true },
 );
 
-GroupSchema.index({ competitiveIndex: -1 });
-GroupSchema.index({ activeTournamentsCount: -1 });
+// Indexes
+GroupSchema.index({ lastActivityAt: -1 });
+GroupSchema.index({ name: 1 }, { unique: true });
+GroupSchema.index({ joinCode: 1 }, { unique: true, sparse: true });
 GroupSchema.index({ createdBy: 1 });
 GroupSchema.index({ isActive: 1, privacy: 1 });
+GroupSchema.index({ competitiveIndex: -1 });
+GroupSchema.index({ activeTournamentsCount: -1 });
 
 export default model("Group", GroupSchema);

@@ -1,11 +1,10 @@
 import * as groupService from "../groupLogic/groupService.js";
+import * as membershipService from "../membershipLogic/membershipService.js"; // ✅ ADDED
 import { asyncWrapper } from "../lib/utils.js";
 import { ValidatorClass } from "../lib/classes/validatorClass.js";
 import { createGroupSchema } from "./groupRequestSchema.js";
 import { processUploadedMedia } from "../middlewares/processUploadedImages.js";
-import {
-  ValidationException,
-} from "../lib/classes/errorClasses.js";
+import { ValidationException } from "../lib/classes/errorClasses.js";
 
 const validator = new ValidatorClass();
 
@@ -25,7 +24,6 @@ export const searchGroupByName = asyncWrapper(async (req, res) => {
 
 export const createGroup = asyncWrapper(async (req, res) => {
   const value = validator.validate(createGroupSchema, req.body);
-
   const avatarFiles = req.files?.avatar;
 
   const [avatarMedia] = await processUploadedMedia(
@@ -56,21 +54,40 @@ export const createGroup = asyncWrapper(async (req, res) => {
 });
 
 // =====================================================
+// GET MY GROUPS (Updated to use optimized Service)
+// =====================================================
+
+export const getMyGroups = asyncWrapper(async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+
+  const groups = await groupService.getMyGroups({
+    userId: req.user._id,
+    page,
+    limit,
+  });
+
+  res.set("Cache-Control", "no-store");
+  res.status(200).json({
+    success: true,
+    page,
+    count: groups.length,
+    data: groups,
+  });
+});
+
+// =====================================================
 // GET GROUP OVERVIEW
 // =====================================================
 
 export const getGroupOverview = asyncWrapper(async (req, res) => {
   const { groupId } = req.params;
-
   const overview = await groupService.getGroupOverview({
     groupId,
     userId: req.user._id,
   });
 
-  res.status(200).json({
-    success: true,
-    data: overview,
-  });
+  res.status(200).json({ success: true, data: overview });
 });
 
 // =====================================================
@@ -119,11 +136,9 @@ export const updateGroupMedia = asyncWrapper(async (req, res) => {
     ...mediaResults,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "Group media updated",
-    group,
-  });
+  res
+    .status(200)
+    .json({ success: true, message: "Group media updated", group });
 });
 
 // =====================================================
@@ -132,12 +147,10 @@ export const updateGroupMedia = asyncWrapper(async (req, res) => {
 
 export const requestToJoinGroup = asyncWrapper(async (req, res) => {
   const { groupId } = req.params;
-
   const result = await groupService.requestToJoinGroup({
     userId: req.user._id,
     groupId,
   });
-
   const isPending = result.status === "pending";
 
   res.status(isPending ? 202 : 200).json({
@@ -173,10 +186,7 @@ export const joinGroupByInvite = asyncWrapper(async (req, res) => {
 export const leaveGroup = asyncWrapper(async (req, res) => {
   await groupService.leaveGroup(req.user._id, req.params.groupId);
 
-  res.status(200).json({
-    success: true,
-    message: "You have left the group",
-  });
+  res.status(200).json({ success: true, message: "You have left the group" });
 });
 
 // =====================================================
@@ -185,18 +195,19 @@ export const leaveGroup = asyncWrapper(async (req, res) => {
 
 export const approveJoinRequest = asyncWrapper(async (req, res) => {
   const { groupId, userId: targetUserId } = req.params;
-
   const result = await groupService.approveGroupJoinRequest({
     adminId: req.user._id,
     groupId,
     targetUserId,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "Join request approved",
-    membership: result,
-  });
+  res
+    .status(200)
+    .json({
+      success: true,
+      message: "Join request approved",
+      membership: result,
+    });
 });
 
 // =====================================================
@@ -205,17 +216,13 @@ export const approveJoinRequest = asyncWrapper(async (req, res) => {
 
 export const rejectJoinRequest = asyncWrapper(async (req, res) => {
   const { groupId, userId: targetUserId } = req.params;
-
   await groupService.rejectGroupJoinRequest({
     adminId: req.user._id,
     groupId,
     targetUserId,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "Join request rejected",
-  });
+  res.status(200).json({ success: true, message: "Join request rejected" });
 });
 
 // =====================================================
@@ -224,17 +231,12 @@ export const rejectJoinRequest = asyncWrapper(async (req, res) => {
 
 export const getPendingJoinRequests = asyncWrapper(async (req, res) => {
   const { groupId } = req.params;
-
-  // Verify caller is admin before fetching
   const requests = await membershipService.getPendingRequests({
     adminId: req.user._id,
     groupId,
   });
 
-  res.status(200).json({
-    success: true,
-    requests,
-  });
+  res.status(200).json({ success: true, requests });
 });
 
 // =====================================================
@@ -248,10 +250,9 @@ export const kickUserFromGroup = asyncWrapper(async (req, res) => {
     targetUserId: req.params.userId,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "User has been removed from the group",
-  });
+  res
+    .status(200)
+    .json({ success: true, message: "User has been removed from the group" });
 });
 
 // =====================================================
@@ -266,11 +267,9 @@ export const changeMemberRole = asyncWrapper(async (req, res) => {
     newRole: req.body.newRole,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "User role updated",
-    updated,
-  });
+  res
+    .status(200)
+    .json({ success: true, message: "User role updated", updated });
 });
 
 // =====================================================
@@ -283,26 +282,8 @@ export const generateInviteLink = asyncWrapper(async (req, res) => {
     groupId: req.params.groupId,
   });
 
-  res.status(200).json({
-    success: true,
-    invite,
-    message: "Invite link generated",
-  });
+  res
+    .status(200)
+    .json({ success: true, invite, message: "Invite link generated" });
 });
 
-// =====================================================
-// GET MY GROUPS
-// =====================================================
-
-export const getMyGroups = asyncWrapper(async (req, res) => {
-  const groups = await groupService.getUserGroupsWithLastMessage({
-    userId: req.user._id,
-  });
-
-  res.set("Cache-Control", "no-store");
-
-  res.status(200).json({
-    success: true,
-    data: groups,
-  });
-});
