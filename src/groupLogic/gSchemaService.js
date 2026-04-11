@@ -11,6 +11,102 @@ export const createGroup = async (payload, options = {}) => {
   return group;
 };
 
+// Get group hub base info (for hub and other internal uses)
+export const findGroupHubBaseById = async (groupId, options = {}) => {
+  const { session } = options;
+
+  return Group.findById(groupId)
+    .select(
+      "name bio avatar privacy totalMembers chatRoom isActive activeTournamentsCount",
+    )
+    .populate("banner")
+    .populate("chatRoom", "_id lastMessageAt lastMessagePreview messagesCount")
+    .session(session || null)
+    .exec();
+};
+
+export const findActiveTournamentSummary = async (groupId, options = {}) => {
+  const { session } = options;
+
+  return mongoose
+    .model("Tournament")
+    .findOne({
+      groupId,
+      status: { $in: ["registration", "ongoing"] },
+    })
+    .select(
+      "name status type currentParticipants maxParticipants currentMatchday totalMatchdays completedMatches totalMatches registrationDeadline startDate",
+    )
+    .sort({ startDate: 1, createdAt: -1 })
+    .session(session || null)
+    .lean()
+    .exec();
+};
+
+export const countGroupTournaments = async (groupId, options = {}) => {
+  const { session } = options;
+
+  return mongoose
+    .model("Tournament")
+    .countDocuments({ groupId })
+    .session(session || null);
+};
+
+export const countGroupMessages = async (chatRoomId, options = {}) => {
+  const { session } = options;
+
+  if (!chatRoomId) return 0;
+
+  return mongoose
+    .model("Message")
+    .countDocuments({
+      chatRoom: chatRoomId,
+      isDeleted: { $ne: true },
+    })
+    .session(session || null);
+};
+
+export const getGroupHubSharedStats = async (
+  { groupId, chatRoomId, activeTournamentsCount = 0 },
+  options = {},
+) => {
+  const { session } = options;
+
+  const [totalTournaments, totalMessages, activeMembers7d] = await Promise.all([
+    countGroupTournaments(groupId, { session }),
+    countGroupMessages(chatRoomId, { session }),
+    countActiveMembers7d(chatRoomId, { session }),
+  ]);
+
+  return {
+    activeTournaments: activeTournamentsCount ?? 0,
+    totalTournaments: totalTournaments ?? 0,
+    totalMessages: totalMessages ?? 0,
+    activeMembers7d: activeMembers7d ?? 0,
+  };
+};
+
+export const countActiveMembers7d = async (chatRoomId, options = {}) => {
+  const { session } = options;
+
+  if (!chatRoomId) return 0;
+
+  const since = new Date();
+  since.setDate(since.getDate() - 7);
+
+  const activeSenders = await mongoose
+    .model("Message")
+    .distinct("sender", {
+      chatRoom: chatRoomId,
+      createdAt: { $gte: since },
+      isDeleted: { $ne: true },
+      sender: { $ne: null },
+    })
+    .session(session || null);
+
+  return activeSenders.length;
+};
+
 // ============================================================
 // FIND
 // ============================================================

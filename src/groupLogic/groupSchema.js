@@ -111,7 +111,7 @@ const GroupSchema = new Schema(
 // Indexes
 GroupSchema.index({ lastActivityAt: -1 });
 GroupSchema.index({ name: 1 }, { unique: true });
-GroupSchema.index({ joinCode: 1 }, { unique: true, sparse: true });
+GroupSchema.index({ joinCode: 1 }, {sparse: true });
 GroupSchema.index({ createdBy: 1 });
 GroupSchema.index({ isActive: 1, privacy: 1 });
 GroupSchema.index({ competitiveIndex: -1 });

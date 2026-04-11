@@ -8,6 +8,7 @@ import { serializeGroup, serializeUser } from "../lib/serializeUser.js";
 import { enqueueNotificationJob } from "../queues/notificationQueue.js";
 import { generateRoomKey } from "../logic/chats/chatRoomKeyService.js";
 import { getOrCreateChatRoom } from "../logic/chats/chatRoomService.js";
+import { deleteGroupHubShared } from "../lib/cache/groupHubCache.js";
 import {
   BadRequestError,
   ConflictException,
@@ -16,8 +17,13 @@ import {
 } from "../lib/classes/errorClasses.js";
 
 // =====================================================
-// PRIVATE HELPERS (Optimized)
+// PRIVATE HELPERS
 // =====================================================
+
+const invalidateGroupHub = async (groupId) => {
+  if (!groupId) return;
+  await deleteGroupHubShared(groupId.toString());
+};
 
 const removeUserFromGroupChatRoom = async ({
   groupId,
@@ -27,7 +33,6 @@ const removeUserFromGroupChatRoom = async ({
   const group = await groupDb.findGroupById(groupId, { session });
   if (!group?.chatRoom) return;
 
-  // Use updateOne with $pull instead of model access if possible
   await mongoose
     .model("ChatRoom")
     .updateOne(
@@ -52,7 +57,6 @@ const ensureUserInGroupChatRoom = async ({
     session,
   });
 
-  // Only update group if needed
   if (
     !group.chatRoom ||
     group.chatRoom.toString() !== chatRoom._id.toString()
@@ -85,27 +89,18 @@ const ensureAdminMembership = async ({ userId, groupId, session }) => {
 };
 
 // =====================================================
-// SEARCH GROUPS (Now uses text index or external search)
+// SEARCH GROUPS
 // =====================================================
 
 export const searchGroupsByName = async ({ name, limit = 20 }) => {
   if (!name || !name.trim()) return [];
 
-  // ✅ Option 1: Use MongoDB Text Index (if you add it)
-  // Ensure you have: GroupSchema.index({ name: "text", bio: "text" })
-  /*
-  const groups = await groupDb.searchGroupsByText(name.trim(), { limit });
-  */
-
-  // ✅ Option 2: Forward to a scalable search service (Recommended for 1M+)
-  // This is a stub. In practice, use Meilisearch/Elasticsearch.
-  const groups = await groupDb.searchGroupsByName({ name, limit }); // Current regex fallback
-
+  const groups = await groupDb.searchGroupsByName({ name, limit });
   return groups.map(serializeGroup);
 };
 
 // =====================================================
-// CREATE GROUP (Optimized)
+// CREATE GROUP
 // =====================================================
 
 export const createGroup = async ({
@@ -119,8 +114,9 @@ export const createGroup = async ({
   if (!user) throw new NotFoundException("User not found");
 
   const existingGroup = await groupDb.findGroupByName(name);
-  if (existingGroup)
+  if (existingGroup) {
     throw new ConflictException("A group with this name already exists");
+  }
 
   const aesKey = generateRoomKey();
   const session = await mongoose.startSession();
@@ -134,13 +130,15 @@ export const createGroup = async ({
         avatar,
         createdBy: user._id,
         aesKey,
-        totalMembers: 1, // Initial count (admin only)
+        totalMembers: 1,
         lastActivityAt: new Date(),
       },
       { session },
     );
 
-    if (!group) throw new BadRequestError("Failed to create group");
+    if (!group) {
+      throw new BadRequestError("Failed to create group");
+    }
 
     await membershipService.createMembership(
       {
@@ -168,10 +166,10 @@ export const createGroup = async ({
 
     await session.commitTransaction();
 
-    // Populate after commit to avoid blocking transaction
+    await invalidateGroupHub(group._id);
+
     group = await group.populate([{ path: "avatar" }, { path: "createdBy" }]);
 
-    // ✅ Enqueue job with idempotency key
     await enqueueNotificationJob(
       "GROUP_CREATED",
       {
@@ -208,11 +206,10 @@ export const createGroup = async ({
   }
 };
 
-
-
 // =====================================================
-// GET GROUP OVERVIEW (Optimized)
+// GET GROUP OVERVIEW
 // =====================================================
+
 export const getGroupOverview = async ({ groupId, userId }) => {
   if (!mongoose.Types.ObjectId.isValid(groupId)) {
     throw new BadRequestError("Invalid group id");
@@ -223,40 +220,42 @@ export const getGroupOverview = async ({ groupId, userId }) => {
     populate: [{ path: "avatar" }],
   });
 
-  if (!group || !group.isActive) throw new NotFoundException("Group not found");
+  if (!group || !group.isActive) {
+    throw new NotFoundException("Group not found");
+  }
 
   const [
     membership,
-    membersPreviewPromise,
-    activeTournamentsPromise,
-    pendingCountPromise,
+    membersPreviewResult,
+    activeTournamentsResult,
+    pendingCountResult,
   ] = await Promise.all([
     membershipService.findMembership({ userId, groupId }),
     membershipCrud.getMemberPreview(groupId),
     tournamentService.getGroupTournaments(groupId, "ongoing"),
-    membershipService.countPendingRequests(groupId).catch(() => 0), // Fail-safe
+    membershipService.countPendingRequests(groupId).catch(() => 0),
   ]);
 
-  // Check access
   if (!membership && group.privacy !== "public") {
     throw new ForbiddenError("You are not a member of this group");
   }
 
   const myRole = membership?.roleInGroup || "member";
-  const membersPreview = membersPreviewPromise || [];
-  const activeTournament = (await activeTournamentsPromise)?.[0] ?? null;
+  const membersPreview = membersPreviewResult || [];
+  const activeTournament = activeTournamentsResult?.[0] ?? null;
 
   let tournamentPreview = null;
+
   if (activeTournament?._id) {
     try {
       tournamentPreview = await tournamentService.getTournamentPreview({
         tournamentId: activeTournament._id,
         userId,
       });
-    } catch (e) {
+    } catch (error) {
       console.warn(
         `Failed to fetch preview for tournament ${activeTournament._id}`,
-        e,
+        error,
       );
       tournamentPreview = null;
     }
@@ -270,13 +269,17 @@ export const getGroupOverview = async ({ groupId, userId }) => {
     privacy: group.privacy,
     memberCount: group.totalMembers || 0,
     myRole,
-    pendingJoinRequestCount: myRole === "admin" ? pendingCountPromise : null,
+    pendingJoinRequestCount: myRole === "admin" ? pendingCountResult : null,
     activeTournament: activeTournament || null,
     tournamentPreview,
     membersPreview,
     lastActivityAt: group.lastActivityAt,
   };
 };
+
+// =====================================================
+// GET MY GROUPS
+// =====================================================
 
 export const getMyGroups = async ({ userId, page = 1, limit = 10 }) => {
   const skip = (page - 1) * limit;
@@ -310,24 +313,24 @@ export const getMyGroups = async ({ userId, page = 1, limit = 10 }) => {
 };
 
 // =====================================================
-// REQUEST TO JOIN GROUP (Idempotent & Safe)
+// REQUEST TO JOIN GROUP
 // =====================================================
 
 export const requestToJoinGroup = async ({ groupId, userId }) => {
   const group = await groupDb.findGroupById(groupId, { select: "privacy" });
   if (!group) throw new NotFoundException("Group not found");
 
-  // ✅ Handle public join safely
   if (group.privacy === "public") {
     const existing = await membershipService.findMembership({
       userId,
       groupId,
     });
+
     if (existing) {
       if (existing.status === "active") {
-        return existing; // Idempotency: already a member
+        return existing;
       }
-      // If pending, we could resolve or ignore – depends on business logic
+
       throw new ConflictException("Already a member or pending request");
     }
 
@@ -348,7 +351,6 @@ export const requestToJoinGroup = async ({ groupId, userId }) => {
 
       await ensureUserInGroupChatRoom({ groupId, userId, session });
 
-      // ✅ Update activity
       await groupDb.updateGroup(
         groupId,
         { lastActivityAt: new Date() },
@@ -357,7 +359,8 @@ export const requestToJoinGroup = async ({ groupId, userId }) => {
 
       await session.commitTransaction();
 
-      // ✅ Fire async job (don't wait)
+      await invalidateGroupHub(groupId);
+
       setImmediate(async () => {
         await enqueueNotificationJob("GROUP_MEMBER_JOINED", {
           groupId: groupId.toString(),
@@ -375,15 +378,16 @@ export const requestToJoinGroup = async ({ groupId, userId }) => {
     }
   }
 
-  // Private group: request flow
   const existingRequest = await membershipService.findMembership({
     userId,
     groupId,
   });
+
   if (existingRequest) {
     if (existingRequest.status === "pending") {
-      return existingRequest; // Idempotency
+      return existingRequest;
     }
+
     throw new ConflictException("You are already a member");
   }
 
@@ -391,6 +395,7 @@ export const requestToJoinGroup = async ({ groupId, userId }) => {
     userId,
     groupId,
   });
+
   setImmediate(() => {
     enqueueNotificationJob("GROUP_JOIN_REQUESTED", {
       groupId: groupId.toString(),
@@ -400,3 +405,22 @@ export const requestToJoinGroup = async ({ groupId, userId }) => {
 
   return request;
 };
+
+// =====================================================
+// NOTE
+// =====================================================
+//
+// Apply the same invalidation rule to the remaining write-side methods
+// in this file after successful commit/completion:
+//
+// await invalidateGroupHub(groupId);
+//
+// Specifically:
+// - approveGroupJoinRequest
+// - leaveGroup
+// - kickUserFromGroup
+// - changeMemberRole
+// - updateGroupMedia
+//
+// Do NOT invalidate before transaction commit.
+// Do NOT invalidate read-only methods.

@@ -79,3 +79,53 @@ export const serializeGroup = (group) => {
   };
 };
 
+export const serializeGroupHub = ({
+  group,
+  myRole,
+  activeTournament,
+  membersPreview,
+  sharedStats,
+  quickActions,
+}) => {
+  return {
+    group: {
+      id: String(group._id),
+      chatRoomId: group.chatRoom?._id
+        ? String(group.chatRoom._id)
+        : group.chatRoom
+          ? String(group.chatRoom)
+          : null,
+      name: group.name,
+      description: group.bio ?? null,
+      avatarUrl: group.avatar?.url ?? null,
+      privacy: group.privacy,
+      totalMembers: group.totalMembers ?? 0,
+      myRole,
+      isMuted: false,
+    },
+    activeTournament: activeTournament
+      ? {
+          id: String(activeTournament._id),
+          name: activeTournament.name,
+          status: activeTournament.status,
+          type: activeTournament.type,
+          currentParticipants: activeTournament.currentParticipants,
+          maxParticipants: activeTournament.maxParticipants,
+          currentMatchday: activeTournament.currentMatchday,
+          totalMatchdays: activeTournament.totalMatchdays,
+          completedMatches: activeTournament.completedMatches,
+          totalMatches: activeTournament.totalMatches,
+          registrationDeadline: activeTournament.registrationDeadline,
+          startDate: activeTournament.startDate,
+        }
+      : null,
+    stats: {
+      activeTournaments: sharedStats.activeTournaments,
+      totalTournaments: sharedStats.totalTournaments,
+      totalMessages: sharedStats.totalMessages,
+      activeMembers7d: sharedStats.activeMembers7d,
+    },
+    membersPreview: membersPreview ?? [],
+    quickActions,
+  };
+};

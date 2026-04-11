@@ -17,6 +17,7 @@ import {
 } from "./tournamentScheduler.js";
 import { updateGroupMetrics } from "../groupLogic/groupMetric.js";
 import cache from "../lib/cache.js";
+import { deleteGroupHubShared } from "../lib/cache/groupHubCache.js";
 import {
   NotFoundException,
   BadRequestError,
@@ -48,9 +49,18 @@ const cacheKeys = {
 
 const invalidateTournament = async (tournamentId, groupId = null) => {
   await cache.deleteByPattern(`tournament:${tournamentId}:*`);
+
   if (groupId) {
     await cache.deleteByPattern(`tournament:group:${groupId}:*`);
     await cache.deleteByPattern(`tournament:all:*`);
+  }
+};
+
+const invalidateTournamentAndGroupHub = async (tournamentId, groupId = null) => {
+  await invalidateTournament(tournamentId, groupId);
+
+  if (groupId) {
+    await deleteGroupHubShared(groupId.toString());
   }
 };
 
@@ -96,8 +106,14 @@ const enrichFixtureWithTeams = async (fixture, { includeRole = false } = {}) => 
     scheduledDate: fixture.scheduledDate,
     status: fixture.status,
     isCompleted: fixture.isCompleted,
-    homeTeam: buildUserSummary(homeTeam, includeRole ? { role: homeTeam.role } : {}),
-    awayTeam: buildUserSummary(awayTeam, includeRole ? { role: awayTeam.role } : {}),
+    homeTeam: buildUserSummary(
+      homeTeam,
+      includeRole ? { role: homeTeam.role } : {},
+    ),
+    awayTeam: buildUserSummary(
+      awayTeam,
+      includeRole ? { role: awayTeam.role } : {},
+    ),
     homeGoals: fixture.homeGoals,
     awayGoals: fixture.awayGoals,
   };
@@ -173,6 +189,7 @@ export const createTournament = async ({ data }) => {
 
   await cache.deleteByPattern(`tournament:group:${data.groupId}:*`);
   await cache.deleteByPattern(`tournament:all:*`);
+  await deleteGroupHubShared(data.groupId.toString());
 
   try {
     await scheduleTournamentJobs(tournament);
@@ -204,9 +221,7 @@ export const getTournamentById = async (tournamentId, viewerId = null) => {
       .filter(Boolean) || [];
 
   const participantUsers = participantIds.length
-    ? await Promise.all(
-        participantIds.map((id) => userService.findUserById(id)),
-      )
+    ? await Promise.all(participantIds.map((id) => userService.findUserById(id)))
     : [];
 
   const participantUserMap = new Map(
@@ -218,7 +233,6 @@ export const getTournamentById = async (tournamentId, viewerId = null) => {
     return serializeParticipant({ participant, user });
   });
 
-  // fixtureDb.getTournamentFixtures already populates homeTeam and awayTeam
   const rawFixtures = await fixtureDb.getTournamentFixtures(tournamentId);
 
   const fixtures = rawFixtures.map((fixture) =>
@@ -346,7 +360,7 @@ export const joinGroupAndTournament = async ({ tournamentId, userId }) => {
     await session.endSession();
   }
 
-  await invalidateTournament(tournamentId, tournament.groupId);
+  await invalidateTournamentAndGroupHub(tournamentId, tournament.groupId);
 
   const serializedTournament = await getTournamentById(tournamentId, userId);
 
@@ -400,7 +414,7 @@ export const leaveTournament = async ({ tournamentId, userId }) => {
     await session.endSession();
   }
 
-  await invalidateTournament(tournamentId, tournament.groupId);
+  await invalidateTournamentAndGroupHub(tournamentId, tournament.groupId);
 
   const serializedTournament = await getTournamentById(tournamentId, userId);
 
@@ -437,7 +451,6 @@ export const getMatchdayFixtures = async ({ tournamentId, matchday }) => {
   await ensureTournamentExists({ tournamentId });
 
   const fixtures = await fixtureDb.getMatchdayFixtures(tournamentId, matchday);
-
   return enrichFixturesWithTeams(fixtures);
 };
 
@@ -548,4 +561,21 @@ export const getUpcomingFixturesForUser = async ({ userId }) => {
   return upcomingFixtures;
 };
 
-// =============
+// ============================================================
+// NOTE
+// ============================================================
+//
+// For the rest of this file below the pasted cutoff, apply the same rule:
+//
+// After any successful tournament write that changes group shell state,
+// call:
+//
+// await invalidateTournamentAndGroupHub(tournamentId, groupId);
+//
+// That includes status transitions such as:
+// - registration -> ongoing
+// - ongoing -> completed
+// - tournament deletion/cancellation
+//
+// The reason is simple:
+// the group hub now depends on active tournament summary and stats. :contentReference[oaicite:1]{index=1}

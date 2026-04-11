@@ -18,6 +18,8 @@ import { getDiscoverGroups } from "../groupLogic/discoverGroupsController.js";
 import { authMiddleware } from "../middlewares/authenticationMdw.js";
 import { requireGroupAdmin } from "../admin/adminMiddleware.js";
 import { handleMediaUpload } from "../middlewares/uploadMiddleware.js";
+import { getGroupHub } from "../groupLogic/groupHubController.js";
+
 
 const groupRouter = Router();
 
@@ -32,6 +34,8 @@ groupRouter.post(
   handleMediaUpload("group"),
   createGroup,
 );
+
+groupRouter.get("/:groupId/hub", authMiddleware, getGroupHub);
 
 // Get group by name
 groupRouter.get("/name/:name", authMiddleware, searchGroupByName);

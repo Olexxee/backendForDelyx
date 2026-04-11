@@ -1,5 +1,5 @@
 import * as groupService from "../groupLogic/groupService.js";
-import * as membershipService from "../membershipLogic/membershipService.js"; // ✅ ADDED
+import * as membershipService from "./membershipService.js";
 import { asyncWrapper } from "../lib/utils.js";
 import { ValidatorClass } from "../lib/classes/validatorClass.js";
 import { createGroupSchema } from "./groupRequestSchema.js";

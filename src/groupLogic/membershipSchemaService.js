@@ -29,12 +29,16 @@ export const findGroupsByUser = async (
     .lean();
 };
 
-export const getMemberPreview = async (groupId) => {
-  const members = await Membership.find({ groupId })
+export const getMemberPreview = async (groupId, limit = 5) => {
+  return Membership.find({
+    groupId,
+    status: "active",
+  })
     .populate("userId", "username profilePicture")
-    .select("roleInGroup status joinedAt")
-    .limit(5);
-  return members;
+    .select("userId roleInGroup joinedAt")
+    .sort({ joinedAt: 1 })
+    .limit(limit)
+    .lean();
 };
 
 export const countMemberships = async (filters = {}) => {
