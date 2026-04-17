@@ -68,7 +68,7 @@ const buildGroupConversationItem = async ({ room, userId }) => {
   });
 
   return {
-    id: room._id.toString(),
+    chatRoomId: room._id.toString(),
     type: "group",
     title: group.name,
     avatarUrl: normalizeAvatar(group.avatar),
@@ -110,7 +110,7 @@ const buildDirectConversationItem = async ({ room, userId }) => {
   });
 
   return {
-    id: room._id.toString(),
+    chatRoomId: room._id.toString(),
     type: "direct",
     title: otherUser.username || "Unknown User",
     avatarUrl: normalizeAvatar(otherUser.profilePicture),

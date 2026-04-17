@@ -16,6 +16,7 @@ import groupRouter from "../routes/groupRoutes.js";
 import membershipRouter from "../routes/membershipRoute.js";
 import tournamentRouter from "../routes/tournamentRoutes.js";
 import participantRouter from "../routes/participantRoute.js";
+import conversationRouter from "../routes/conversationRoutes.js";
 
 const app = express();
 const server = createServer(app);
@@ -74,6 +75,7 @@ app.use(`${apiBase}/auth`, authRoute);
 app.use(`${apiBase}/profile`, userRoute);
 // app.use(`${apiBase}/posts`, postRoute);
 // app.use(`${apiBase}/stats`, statRoute);
+app.use("/conversations", conversationRouter);
 app.use(`${apiBase}/groups`, groupRouter);
 app.use(`${apiBase}/config`, configRouter);
 app.use(`${apiBase}/membership`, membershipRouter);

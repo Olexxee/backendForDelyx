@@ -5,38 +5,52 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 /**
- * Centralized media upload tunnel for all app types
- * @param {string} type - "store" | "catalog" | "profile" | "event" | "group"
+ * Centralized media upload tunnel for app resources
+ * @param {string} type
  */
 export const handleMediaUpload = (type) => {
-  let maxCount = 1; // default single file
-
   switch (type) {
     case "catalog":
-      maxCount = 3;
-      break;
-    case "profile":
-      maxCount = 5;
-      break;
-    case "event":
-      maxCount = 10;
-      break;
-    case "store":
-      maxCount = 5;
-      break;
-    case "ask":
-      maxCount = 3;
-      break;
-    case "timeline":
-      maxCount = 10;
-      break;
-    case "group":
-      maxCount = 1; // Only one avatar or banner at a time
-      break;
-  }
+      return upload.fields([
+        { name: "avatar", maxCount: 3 },
+        { name: "banner", maxCount: 3 },
+      ]);
 
-  return upload.fields([
-    { name: "avatar", maxCount: maxCount },
-    { name: "banner", maxCount: maxCount },
-  ]);
+    case "profile":
+      return upload.fields([
+        { name: "avatar", maxCount: 5 },
+        { name: "banner", maxCount: 5 },
+      ]);
+
+    case "event":
+      return upload.fields([
+        { name: "avatar", maxCount: 10 },
+        { name: "banner", maxCount: 10 },
+      ]);
+
+    case "store":
+      return upload.fields([
+        { name: "avatar", maxCount: 5 },
+        { name: "banner", maxCount: 5 },
+      ]);
+
+    case "ask":
+      return upload.fields([
+        { name: "avatar", maxCount: 3 },
+        { name: "banner", maxCount: 3 },
+      ]);
+
+    case "group":
+      return upload.fields([
+        { name: "avatar", maxCount: 1 },
+        { name: "banner", maxCount: 1 },
+      ]);
+
+    case "timeline":
+    case "feed-post":
+      return upload.array("media", 10);
+
+    default:
+      return upload.none();
+  }
 };
