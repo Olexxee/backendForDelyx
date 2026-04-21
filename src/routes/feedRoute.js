@@ -1,21 +1,22 @@
 import express from "express";
-import authMiddleware from "../middleware/authMiddleware.js";
+import {authMiddleware} from "../middlewares/authenticationMdw.js";
+import { handleMediaUpload } from "../middlewares/uploadMiddleware.js";
 import {
   validateBody,
   validateParams,
   validateQuery,
-} from "../middleware/validationMiddleware.js";
+} from "../middlewares/validatorMiddleware.js";
+import { normalizeMultipartFeedPostBody } from "../middlewares/normalizeMultipartFeedPostBody.js";
+
 import {
   createFeedPostSchema,
   updateFeedPostSchema,
+  listFeedPostsSchema,
 } from "../logic/feed/validation/feedPostValidation.js";
-import {
-  listCommentsQuerySchema,
-  listPostsQuerySchema,
-} from "../logic/feed/validation/feedQueryValidation.js";
 import {
   createFeedCommentSchema,
   updateFeedCommentSchema,
+  listFeedCommentsSchema,
 } from "../logic/feed/validation/feedCommentValidation.js";
 import {
   authorIdParamSchema,
@@ -23,6 +24,7 @@ import {
   contextPostParamsSchema,
   postIdParamSchema,
 } from "../logic/feed/validation/feedParamsValidation.js";
+
 import {
   createFeedPost,
   deleteFeedPost,
@@ -31,45 +33,55 @@ import {
   getPostsByAuthor,
   getPostsByContext,
   updateFeedPost,
-} from "../logic/feed/controllers/feedPostController.js";
+  hideFeedPost,
+  unhideFeedPost,
+  flagFeedPost,
+  unflagFeedPost,
+} from "../logic/feed/feedPostController.js";
 import {
   createFeedComment,
   deleteFeedComment,
   getCommentsForPost,
   getRepliesForComment,
   updateFeedComment,
-} from "../logic/feed/controllers/feedCommentController.js";
+} from "../logic/feed/feedCommentController.js";
 import {
   reactToComment,
   reactToPost,
   unreactToComment,
   unreactToPost,
-} from "../logic/feed/controllers/feedReactionController.js";
+} from "../logic/feed/feedReactionController.js";
 
 const feedRouter = express.Router();
 
-// Posts
+// ============ POSTS ============
+
 feedRouter.post(
   "/posts",
   authMiddleware,
+  handleMediaUpload("feed-post"),
+  normalizeMultipartFeedPostBody,
   validateBody(createFeedPostSchema),
   createFeedPost,
-);
-
-feedRouter.get("/posts", validateQuery(listPostsQuerySchema), getFeedPosts);
-
-feedRouter.get(
-  "/posts/:postId",
-  validateParams(postIdParamSchema),
-  getFeedPostById,
 );
 
 feedRouter.patch(
   "/posts/:postId",
   authMiddleware,
   validateParams(postIdParamSchema),
+  handleMediaUpload("feed-post"),
+  normalizeMultipartFeedPostBody,
   validateBody(updateFeedPostSchema),
   updateFeedPost,
+);
+
+feedRouter.get("/posts", validateQuery(listFeedPostsSchema), getFeedPosts);
+
+feedRouter.get(
+  "/posts/:postId",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  getFeedPostById,
 );
 
 feedRouter.delete(
@@ -79,21 +91,55 @@ feedRouter.delete(
   deleteFeedPost,
 );
 
+// Post moderation endpoints
+feedRouter.patch(
+  "/posts/:postId/hide",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  hideFeedPost,
+);
+
+feedRouter.patch(
+  "/posts/:postId/unhide",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  unhideFeedPost,
+);
+
+feedRouter.patch(
+  "/posts/:postId/flag",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  flagFeedPost,
+);
+
+feedRouter.patch(
+  "/posts/:postId/unflag",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  unflagFeedPost,
+);
+
+// ============ CONTEXT & AUTHOR ============
+
 feedRouter.get(
   "/contexts/:contextType/:contextId/posts",
+  authMiddleware, // ✅ Added - required for private context access
   validateParams(contextPostParamsSchema),
-  validateQuery(listPostsQuerySchema),
+  validateQuery(listFeedPostsSchema),
   getPostsByContext,
 );
 
 feedRouter.get(
   "/authors/:authorId/posts",
+  authMiddleware, // ✅ Added - author posts may be private
   validateParams(authorIdParamSchema),
-  validateQuery(listPostsQuerySchema),
+  validateQuery(listFeedPostsSchema),
   getPostsByAuthor,
 );
 
-// Comments
+// ============ COMMENTS ============
+
 feedRouter.post(
   "/comments",
   authMiddleware,
@@ -105,7 +151,7 @@ feedRouter.get(
   "/posts/:postId/comments",
   authMiddleware,
   validateParams(postIdParamSchema),
-  validateQuery(listCommentsQuerySchema),
+  validateQuery(listFeedCommentsSchema),
   getCommentsForPost,
 );
 
@@ -113,7 +159,7 @@ feedRouter.get(
   "/comments/:commentId/replies",
   authMiddleware,
   validateParams(commentIdParamSchema),
-  validateQuery(listCommentsQuerySchema),
+  validateQuery(listFeedCommentsSchema),
   getRepliesForComment,
 );
 
@@ -132,7 +178,8 @@ feedRouter.delete(
   deleteFeedComment,
 );
 
-// Reactions
+// ============ REACTIONS ============
+
 feedRouter.post(
   "/posts/:postId/reactions",
   authMiddleware,

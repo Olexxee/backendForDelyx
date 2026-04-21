@@ -1,4 +1,4 @@
-import FeedComment from "../schemas/feedCommentSchema.js";
+import FeedComment from "./feedCommentSchema.js";
 
 const normalizeListOptions = (options = {}) => {
   const {

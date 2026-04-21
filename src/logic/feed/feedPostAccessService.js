@@ -3,9 +3,9 @@ import {
   ForbiddenError,
   NotFoundException,
 } from "../../lib/classes/errorClasses.js";
-import * as groupService from "../../group/groupService.js";
-import * as membershipService from "../../group/membershipService.js";
-import * as tournamentService from "../../tournament/tournamentService.js";
+import * as groupService from "../../groupLogic/groupService.js";
+import * as membershipService from "../../groupLogic/membershipService.js";
+import * as tournamentService from "../../tournamentLogic/tournamentService.js";
 
 const isSameId = (a, b) => String(a) === String(b);
 

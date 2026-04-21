@@ -1,4 +1,4 @@
-import FeedReaction from "../schemas/feedReactionSchema.js";
+import FeedReaction from "./feedReactionSchema.js";
 
 export const findReaction = async (query, options = {}) => {
   const { session = null, lean = false } = options;

@@ -1,4 +1,4 @@
-import FeedPost from "../schemas/feedPostSchema.js";
+import FeedPost from "./feedPostSchema.js";
 
 const normalizeListOptions = (options = {}) => {
   const {

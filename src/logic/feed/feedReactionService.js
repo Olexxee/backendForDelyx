@@ -6,21 +6,21 @@ import { validator } from "../../lib/classes/validatorClass.js";
 import {
   reactToTargetSchema,
   unreactToTargetSchema,
-} from "../validation/feedReactionValidation.js";
+} from "./validation/feedReactionValidation.js";
 import {
   countReactionsForTarget,
   deleteReaction,
   findReaction,
   upsertReaction,
-} from "../db/feedReactionDb.js";
+} from "../../models/feedReactionDb.js";
 import {
   findFeedPostById,
   incrementPostReactionsCount,
-} from "../db/feedPostDb.js";
+} from "../../models/feedPostDb.js";
 import {
   findFeedCommentById,
   incrementCommentReactionsCount,
-} from "../db/feedCommentDb.js";
+} from "../../models/feedCommentDb.js";
 
 const ensureTargetExists = async ({ targetType, targetId }, options = {}) => {
   if (targetType === "post") {

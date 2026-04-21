@@ -7,13 +7,12 @@ import {
   createFeedCommentSchema,
   listFeedCommentsSchema,
   updateFeedCommentSchema,
-} from "../validation/feedCommentValidation.js";
+} from "./validation/feedCommentValidation.js";
 import {
   createFeedComment,
   findCommentsForPost,
   findFeedCommentById,
   findRepliesForComment,
-  incrementCommentReactionsCount,
   setFeedCommentStatus,
   updateFeedCommentById,
 } from "../../models/feedCommentDb.js";

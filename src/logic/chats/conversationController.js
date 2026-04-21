@@ -1,5 +1,5 @@
 import conversationService from "./conversationService.js";
-import { asyncWrapper } from "../lib/utils.js";
+import { asyncWrapper } from "../../lib/utils.js";
 
 export const getInbox = asyncWrapper(async (req, res) => {
   const result = await conversationService.getInboxForUser({

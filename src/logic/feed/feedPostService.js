@@ -150,7 +150,7 @@ export const updatePost = async (postId, updates, options = {}) => {
     contextId: existingPost.contextId,
     visibility: nextVisibility,
   });
-  
+
   const {
     contextType: _contextType,
     contextId: _contextId,
@@ -209,3 +209,6 @@ export const flagPost = async (postId, options = {}) => {
 
   return updated;
 };
+
+// Export setFeedPostStatus for direct status changes (unhide/unflag)
+export { setFeedPostStatus };

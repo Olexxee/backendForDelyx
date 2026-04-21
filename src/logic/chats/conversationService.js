@@ -4,7 +4,7 @@ import Message from "../../models/messageSchema.js";
 import Group from "../../groupLogic/groupSchema.js";
 import * as membershipService from "../../groupLogic/membershipService.js";
 import * as tournamentService from "../../tournamentLogic/tournamentService.js";
-import userService from "../../user/userService.js";
+import * as userService from "../../user/userService.js";
 import { NotFoundException } from "../../lib/classes/errorClasses.js";
 
 const normalizeAvatar = (value) => {
