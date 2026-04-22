@@ -3,7 +3,7 @@ import {
   ValidationException,
   BadRequestError,
 } from "../lib/classes/errorClasses.js";
-import { ValidatorClass } from "../lib/classes/validatorClass.js";
+import { validator} from "../lib/classes/validatorClass.js";
 import path from "path";
 import fs from "fs";
 import {
@@ -16,8 +16,6 @@ import {
   resetPasswordSchema,
 } from "./authRequest.js";
 import { asyncWrapper } from "../lib/utils.js";
-
-const validator = new ValidatorClass();
 
 /* ================= AUTH ================= */
 

@@ -21,6 +21,73 @@ const ensurePost = (post) => {
   }
 };
 
+const getGroupMembership = async ({ userId, groupId }) => {
+  return membershipService.findMembership?.({
+    userId,
+    groupId,
+  });
+};
+
+const assertGroupModeratorOrOwner = async ({ userId, groupId }) => {
+  const membership = await getGroupMembership({ userId, groupId });
+
+  if (!membership || membership.status !== "active") {
+    throw new ForbiddenError("You are not allowed to moderate this group.");
+  }
+
+  if (!["owner", "admin"].includes(membership.role)) {
+    throw new ForbiddenError("You are not allowed to moderate this group.");
+  }
+
+  return true;
+};
+
+const assertTournamentModeratorOrOwner = async ({ userId, tournamentId }) => {
+  const tournament = await tournamentService.getTournamentById?.(tournamentId);
+
+  if (!tournament) {
+    throw new NotFoundException("Tournament not found.");
+  }
+
+  const isOwner = isSameId(
+    tournament.createdBy?._id ?? tournament.createdBy,
+    userId,
+  );
+
+  if (!isOwner) {
+    throw new ForbiddenError(
+      "You are not allowed to moderate this tournament.",
+    );
+  }
+
+  return true;
+};
+
+const assertCanModerateByContext = async ({ userId, post }) => {
+  if (post.contextType === "group" && post.contextId) {
+    return assertGroupModeratorOrOwner({
+      userId,
+      groupId: post.contextId,
+    });
+  }
+
+  if (
+    (post.contextType === "tournament" || post.contextType === "match") &&
+    post.contextId
+  ) {
+    return assertTournamentModeratorOrOwner({
+      userId,
+      tournamentId: post.contextId,
+    });
+  }
+
+  if (isSameId(post.author, userId)) {
+    return true;
+  }
+
+  throw new ForbiddenError("You are not allowed to moderate this post.");
+};
+
 export const assertCanCreatePostInContext = async ({
   userId,
   contextType,
@@ -117,10 +184,20 @@ export const assertCanViewPost = async ({ userId, post }) => {
   }
 
   if (post.status === "hidden" || post.status === "flagged") {
-    if (!userId || !isSameId(post.author, userId)) {
-      throw new ForbiddenError("You do not have access to this post.");
+    if (userId && isSameId(post.author, userId)) {
+      return true;
     }
-    return true;
+
+    if (userId) {
+      try {
+        await assertCanModerateByContext({ userId, post });
+        return true;
+      } catch {
+        throw new ForbiddenError("You do not have access to this post.");
+      }
+    }
+
+    throw new ForbiddenError("You do not have access to this post.");
   }
 
   if (post.visibility === "public") {
@@ -197,6 +274,43 @@ export const assertCanModifyPost = async ({ userId, post }) => {
   }
 
   return true;
+};
+
+export const assertCanHideOwnPost = async ({ userId, post }) => {
+  ensureUserId(userId);
+  ensurePost(post);
+
+  if (post.status === "deleted") {
+    throw new NotFoundException("Post not found.");
+  }
+
+  if (!isSameId(post.author, userId)) {
+    throw new ForbiddenError("You are not allowed to hide this post.");
+  }
+
+  return true;
+};
+
+export const assertCanFlagPost = async ({ userId, post }) => {
+  ensureUserId(userId);
+  await assertCanViewPost({ userId, post });
+
+  if (post.status === "deleted") {
+    throw new ForbiddenError("This post cannot be flagged.");
+  }
+
+  return true;
+};
+
+export const assertCanModeratePost = async ({ userId, post }) => {
+  ensureUserId(userId);
+  ensurePost(post);
+
+  if (post.status === "deleted") {
+    throw new NotFoundException("Post not found.");
+  }
+
+  return assertCanModerateByContext({ userId, post });
 };
 
 export const assertCanCommentOnPost = async ({ userId, post }) => {

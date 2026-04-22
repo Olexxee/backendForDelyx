@@ -2,9 +2,7 @@ import * as membershipService from "./membershipService.js";
 import * as userService from "../user/userService.js";
 import { asyncWrapper } from "../lib/utils.js";
 import { BadRequestError } from "../lib/classes/errorClasses.js";
-import { ValidatorClass } from "../lib/classes/validatorClass.js";
-
-const validator = new ValidatorClass();
+import { validator } from "../lib/classes/validatorClass.js";
 
 // Join group (membership creation)
 export const joinGroup = asyncWrapper(async (req, res) => {

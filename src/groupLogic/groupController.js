@@ -1,12 +1,11 @@
 import * as groupService from "../groupLogic/groupService.js";
 import * as membershipService from "./membershipService.js";
 import { asyncWrapper } from "../lib/utils.js";
-import { ValidatorClass } from "../lib/classes/validatorClass.js";
+import { validator } from "../lib/classes/validatorClass.js";
 import { createGroupSchema } from "./groupRequestSchema.js";
 import { processUploadedMedia } from "../middlewares/processUploadedImages.js";
 import { ValidationException } from "../lib/classes/errorClasses.js";
 
-const validator = new ValidatorClass();
 
 // =====================================================
 // SEARCH GROUP BY NAME

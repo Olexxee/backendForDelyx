@@ -17,7 +17,7 @@ export const createFeedPost = asyncWrapper(async (req, res) => {
   if (Array.isArray(req.files) && req.files.length > 0) {
     const uploadedMedia = await processUploadedMedia(
       req.files,
-      "feed-post",
+      "timeline",
       req.user,
       {
         resizeWidth: 1440,
@@ -38,9 +38,6 @@ export const createFeedPost = asyncWrapper(async (req, res) => {
     contextType: req.body.contextType,
     contextId: req.body.contextId,
     visibility: req.body.visibility,
-    status: req.body.status,
-    isPinned: req.body.isPinned,
-    isFeatured: req.body.isFeatured,
   });
 
   return res.status(201).json({
@@ -51,7 +48,7 @@ export const createFeedPost = asyncWrapper(async (req, res) => {
 });
 
 export const getFeedPostById = asyncWrapper(async (req, res) => {
-  const userId = req.user?._id ?? req.user?.id ?? null;
+  const userId = req.user?._id ?? req.user?.id;
   const { postId } = req.params;
 
   const post = await feedPostService.getPostById(postId, {
@@ -70,9 +67,9 @@ export const getFeedPostById = asyncWrapper(async (req, res) => {
 });
 
 export const getFeedPosts = asyncWrapper(async (req, res) => {
-  const userId = req.user?._id ?? req.user?.id ?? null;
+  const userId = req.user?._id ?? req.user?.id;
 
-  const result = await feedPostService.getPostsForUser(userId, req.query, {
+  const result = await feedPostService.getPostsByContext(userId, req.query, {
     populate: [{ path: "author", select: "username profilePicture" }],
   });
 
@@ -115,8 +112,9 @@ export const updateFeedPost = asyncWrapper(async (req, res) => {
   }
 
   const updatedPost = await feedPostService.updatePost(postId, {
-    ...req.body,
+    content: req.body.content,
     media: nextMedia,
+    visibility: req.body.visibility,
   });
 
   return res.status(200).json({
@@ -147,7 +145,7 @@ export const deleteFeedPost = asyncWrapper(async (req, res) => {
 });
 
 export const getPostsByContext = asyncWrapper(async (req, res) => {
-  const userId = req.user?._id ?? req.user?.id ?? null;
+  const userId = req.user?._id ?? req.user?.id;
   const { contextType, contextId } = req.params;
   const { page = 1, limit = 20, status = "active" } = req.query;
 
@@ -168,10 +166,12 @@ export const getPostsByContext = asyncWrapper(async (req, res) => {
 });
 
 export const getPostsByAuthor = asyncWrapper(async (req, res) => {
+  const userId = req.user?._id ?? req.user?.id;
   const { authorId } = req.params;
   const { page = 1, limit = 20, status = "active" } = req.query;
 
-  const result = await feedPostService.getPostsByAuthor(
+  const result = await feedPostService.getPostsByAuthorForUser(
+    userId,
     { authorId, status },
     {
       page,
@@ -192,13 +192,14 @@ export const hideFeedPost = asyncWrapper(async (req, res) => {
 
   const post = await feedPostService.getPostById(postId);
 
-  await feedPostAccessService.assertCanModifyPost({ userId, post });
+  await feedPostAccessService.assertCanHideOwnPost({ userId, post });
 
-  await feedPostService.setFeedPostStatus(postId, "hidden");
+  const updatedPost = await feedPostService.hidePost(postId);
 
   return res.status(200).json({
     success: true,
     message: "Post hidden successfully.",
+    data: updatedPost,
   });
 });
 
@@ -208,13 +209,14 @@ export const unhideFeedPost = asyncWrapper(async (req, res) => {
 
   const post = await feedPostService.getPostById(postId);
 
-  await feedPostAccessService.assertCanModifyPost({ userId, post });
+  await feedPostAccessService.assertCanHideOwnPost({ userId, post });
 
-  await feedPostService.setFeedPostStatus(postId, "active");
+  const updatedPost = await feedPostService.setFeedPostStatus(postId, "active");
 
   return res.status(200).json({
     success: true,
     message: "Post unhidden successfully.",
+    data: updatedPost,
   });
 });
 
@@ -224,13 +226,14 @@ export const flagFeedPost = asyncWrapper(async (req, res) => {
 
   const post = await feedPostService.getPostById(postId);
 
-  await feedPostAccessService.assertCanViewPost({ userId, post });
+  await feedPostAccessService.assertCanFlagPost({ userId, post });
 
-  await feedPostService.setFeedPostStatus(postId, "flagged");
+  const updatedPost = await feedPostService.flagPost(postId);
 
   return res.status(200).json({
     success: true,
     message: "Post flagged successfully.",
+    data: updatedPost,
   });
 });
 
@@ -240,12 +243,89 @@ export const unflagFeedPost = asyncWrapper(async (req, res) => {
 
   const post = await feedPostService.getPostById(postId);
 
-  await feedPostAccessService.assertCanViewPost({ userId, post });
+  await feedPostAccessService.assertCanModeratePost({ userId, post });
 
-  await feedPostService.setFeedPostStatus(postId, "active");
+  const updatedPost = await feedPostService.setFeedPostStatus(postId, "active");
 
   return res.status(200).json({
     success: true,
     message: "Post unflagged successfully.",
+    data: updatedPost,
+  });
+});
+
+export const pinFeedPost = asyncWrapper(async (req, res) => {
+  const userId = req.user?._id ?? req.user?.id;
+  const { postId } = req.params;
+
+  const post = await feedPostService.getPostById(postId);
+
+  await feedPostAccessService.assertCanModeratePost({ userId, post });
+
+  const updatedPost = await feedPostService.updatePost(postId, {
+    isPinned: true,
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Post pinned successfully.",
+    data: updatedPost,
+  });
+});
+
+export const unpinFeedPost = asyncWrapper(async (req, res) => {
+  const userId = req.user?._id ?? req.user?.id;
+  const { postId } = req.params;
+
+  const post = await feedPostService.getPostById(postId);
+
+  await feedPostAccessService.assertCanModeratePost({ userId, post });
+
+  const updatedPost = await feedPostService.updatePost(postId, {
+    isPinned: false,
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Post unpinned successfully.",
+    data: updatedPost,
+  });
+});
+
+export const featureFeedPost = asyncWrapper(async (req, res) => {
+  const userId = req.user?._id ?? req.user?.id;
+  const { postId } = req.params;
+
+  const post = await feedPostService.getPostById(postId);
+
+  await feedPostAccessService.assertCanModeratePost({ userId, post });
+
+  const updatedPost = await feedPostService.updatePost(postId, {
+    isFeatured: true,
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Post featured successfully.",
+    data: updatedPost,
+  });
+});
+
+export const unfeatureFeedPost = asyncWrapper(async (req, res) => {
+  const userId = req.user?._id ?? req.user?.id;
+  const { postId } = req.params;
+
+  const post = await feedPostService.getPostById(postId);
+
+  await feedPostAccessService.assertCanModeratePost({ userId, post });
+
+  const updatedPost = await feedPostService.updatePost(postId, {
+    isFeatured: false,
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Post unfeatured successfully.",
+    data: updatedPost,
   });
 });

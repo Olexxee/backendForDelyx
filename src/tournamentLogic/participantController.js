@@ -1,5 +1,5 @@
 import * as participantService from "./participantService.js";
-import { ValidatorClass } from "../lib/classes/validatorClass.js";
+import { validator } from "../lib/classes/validatorClass.js";
 import {
   registerParticipantSchema,
   bulkRegisterSchema,
@@ -11,7 +11,6 @@ import {
 } from "../lib/classes/errorClasses.js";
 import { asyncWrapper } from "../lib/utils.js";
 
-const validator = new ValidatorClass();
 
 // Register for tournament
 export const registerForTournament = asyncWrapper(async (req, res) => {

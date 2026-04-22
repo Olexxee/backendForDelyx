@@ -6,7 +6,6 @@ const GroupSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
     },
 
     bio: {
@@ -15,7 +14,7 @@ const GroupSchema = new Schema(
       trim: true,
     },
 
-    banner: {
+    avatar: {
       type: Types.ObjectId,
       ref: "Media",
       default: null,
@@ -29,8 +28,6 @@ const GroupSchema = new Schema(
 
     joinCode: {
       type: String,
-      sparse: true,
-      unique: true,
     },
 
     createdBy: {
@@ -111,7 +108,7 @@ const GroupSchema = new Schema(
 // Indexes
 GroupSchema.index({ lastActivityAt: -1 });
 GroupSchema.index({ name: 1 }, { unique: true });
-GroupSchema.index({ joinCode: 1 }, {sparse: true });
+GroupSchema.index({ joinCode: 1 }, { sparse: true }, { unique: true });
 GroupSchema.index({ createdBy: 1 });
 GroupSchema.index({ isActive: 1, privacy: 1 });
 GroupSchema.index({ competitiveIndex: -1 });

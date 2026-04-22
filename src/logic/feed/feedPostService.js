@@ -9,7 +9,7 @@ import {
   findPostsByAuthor,
   findPostsByContext,
   setFeedPostStatus,
-  updateFeedPostById,
+  updateFeedPostFields,
 } from "../../models/feedPostDb.js";
 
 const ensurePostContent = ({ content, media }) => {
@@ -71,9 +71,12 @@ export const createPost = async (payload, options = {}) => {
 
   return createFeedPost(
     {
-      ...payload,
+      author: payload.author,
       content: normalized.content,
       media: normalized.media,
+      contextType: payload.contextType,
+      contextId: payload.contextId,
+      visibility: payload.visibility,
     },
     options,
   );
@@ -144,28 +147,27 @@ export const updatePost = async (postId, updates, options = {}) => {
   const nextVisibility =
     "visibility" in updates ? updates.visibility : existingPost.visibility;
 
-  // Context is immutable after creation — always validate against the DB values.
   ensureContextConsistency({
     contextType: existingPost.contextType,
     contextId: existingPost.contextId,
     visibility: nextVisibility,
   });
 
-  const {
-    contextType: _contextType,
-    contextId: _contextId,
-    ...safeUpdates
-  } = updates;
+  const allowedUpdates = {
+    content: normalized.content,
+    media: normalized.media,
+    visibility: nextVisibility,
+  };
 
-  const updated = await updateFeedPostById(
-    postId,
-    {
-      ...safeUpdates,
-      content: normalized.content,
-      media: normalized.media,
-    },
-    options,
-  );
+  if ("isPinned" in updates) {
+    allowedUpdates.isPinned = updates.isPinned;
+  }
+
+  if ("isFeatured" in updates) {
+    allowedUpdates.isFeatured = updates.isFeatured;
+  }
+
+  const updated = await updateFeedPostById(postId, allowedUpdates, options);
 
   if (!updated) {
     throw new NotFoundException("Post not found.");
@@ -210,5 +212,4 @@ export const flagPost = async (postId, options = {}) => {
   return updated;
 };
 
-// Export setFeedPostStatus for direct status changes (unhide/unflag)
 export { setFeedPostStatus };

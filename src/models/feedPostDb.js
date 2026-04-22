@@ -102,10 +102,25 @@ export const findPostsByAuthor = async (
   );
 };
 
-export const updateFeedPostById = async (postId, updates, options = {}) => {
+export const updateFeedPostFields = async (postId, updates, options = {}) => {
   const { session = null, lean = false } = options;
 
-  let query = FeedPost.findByIdAndUpdate(postId, updates, {
+  const allowedUpdates = {};
+  const allowedKeys = [
+    "content",
+    "media",
+    "visibility",
+    "isPinned",
+    "isFeatured",
+  ];
+
+  for (const key of allowedKeys) {
+    if (key in updates) {
+      allowedUpdates[key] = updates[key];
+    }
+  }
+
+  let query = FeedPost.findByIdAndUpdate(postId, allowedUpdates, {
     new: true,
     runValidators: true,
     session,
@@ -117,7 +132,37 @@ export const updateFeedPostById = async (postId, updates, options = {}) => {
 };
 
 export const setFeedPostStatus = async (postId, status, options = {}) => {
-  return updateFeedPostById(postId, { status }, options);
+  const { session = null, lean = false } = options;
+
+  let query = FeedPost.findByIdAndUpdate(
+    postId,
+    { status },
+    {
+      new: true,
+      runValidators: true,
+      session,
+    },
+  );
+
+  if (lean) query = query.lean();
+
+  return query;
+};
+
+export const setFeedPostPinnedState = async (
+  postId,
+  isPinned,
+  options = {},
+) => {
+  return updateFeedPostFields(postId, { isPinned }, options);
+};
+
+export const setFeedPostFeaturedState = async (
+  postId,
+  isFeatured,
+  options = {},
+) => {
+  return updateFeedPostFields(postId, { isFeatured }, options);
 };
 
 export const incrementPostCommentsCount = async (

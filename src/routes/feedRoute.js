@@ -1,5 +1,5 @@
 import express from "express";
-import {authMiddleware} from "../middlewares/authenticationMdw.js";
+import { authMiddleware } from "../middlewares/authenticationMdw.js";
 import { handleMediaUpload } from "../middlewares/uploadMiddleware.js";
 import {
   validateBody,
@@ -37,6 +37,10 @@ import {
   unhideFeedPost,
   flagFeedPost,
   unflagFeedPost,
+  pinFeedPost,
+  unpinFeedPost,
+  featureFeedPost,
+  unfeatureFeedPost,
 } from "../logic/feed/feedPostController.js";
 import {
   createFeedComment,
@@ -75,7 +79,12 @@ feedRouter.patch(
   updateFeedPost,
 );
 
-feedRouter.get("/posts", validateQuery(listFeedPostsSchema), getFeedPosts);
+feedRouter.get(
+  "/posts",
+  authMiddleware,
+  validateQuery(listFeedPostsSchema),
+  getFeedPosts,
+);
 
 feedRouter.get(
   "/posts/:postId",
@@ -91,7 +100,7 @@ feedRouter.delete(
   deleteFeedPost,
 );
 
-// Post moderation endpoints
+// Author-level state changes
 feedRouter.patch(
   "/posts/:postId/hide",
   authMiddleware,
@@ -113,6 +122,7 @@ feedRouter.patch(
   flagFeedPost,
 );
 
+// Moderator/admin actions
 feedRouter.patch(
   "/posts/:postId/unflag",
   authMiddleware,
@@ -120,11 +130,39 @@ feedRouter.patch(
   unflagFeedPost,
 );
 
+feedRouter.patch(
+  "/posts/:postId/pin",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  pinFeedPost,
+);
+
+feedRouter.patch(
+  "/posts/:postId/unpin",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  unpinFeedPost,
+);
+
+feedRouter.patch(
+  "/posts/:postId/feature",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  featureFeedPost,
+);
+
+feedRouter.patch(
+  "/posts/:postId/unfeature",
+  authMiddleware,
+  validateParams(postIdParamSchema),
+  unfeatureFeedPost,
+);
+
 // ============ CONTEXT & AUTHOR ============
 
 feedRouter.get(
   "/contexts/:contextType/:contextId/posts",
-  authMiddleware, // ✅ Added - required for private context access
+  authMiddleware,
   validateParams(contextPostParamsSchema),
   validateQuery(listFeedPostsSchema),
   getPostsByContext,
@@ -132,7 +170,7 @@ feedRouter.get(
 
 feedRouter.get(
   "/authors/:authorId/posts",
-  authMiddleware, // ✅ Added - author posts may be private
+  authMiddleware,
   validateParams(authorIdParamSchema),
   validateQuery(listFeedPostsSchema),
   getPostsByAuthor,

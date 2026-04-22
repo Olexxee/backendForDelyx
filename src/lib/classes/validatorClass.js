@@ -1,30 +1,40 @@
+import Joi from "joi";
 import { ValidationException } from "./errorClasses.js";
 
-export class ValidatorClass {
-  validate(schema, payload) {
-    const { error, value } = schema.validate(payload, { abortEarly: false });
+class ValidatorClass {
+  validate(schema, value) {
+    const { error, value: validatedValue } = schema.validate(value, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
 
     if (error) {
-      const detail = error.details[0]; // throw first error
-      const message = detail.message;
-      const path = detail.path.join(".");
-      throw new ValidationException(message, path);
+      throw new ValidationException(
+        error.details.map((item) => item.message).join(", "),
+      );
     }
 
-    return value;
+    return validatedValue;
   }
 
   body(schema, req) {
-    req.body = this.validate(schema, req.body);
+    const validatedBody = this.validate(schema, req.body ?? {});
+    req.body = validatedBody;
+    return req.body;
   }
 
   query(schema, req) {
-    req.query = this.validate(schema, req.query);
+    const validatedQuery = this.validate(schema, req.query ?? {});
+    Object.assign(req.query, validatedQuery);
+    return req.query;
   }
 
   params(schema, req) {
-    req.params = this.validate(schema, req.params);
+    const validatedParams = this.validate(schema, req.params ?? {});
+    Object.assign(req.params, validatedParams);
+    return req.params;
   }
 }
 
 export const validator = new ValidatorClass();
+ 

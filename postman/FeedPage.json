@@ -6,46 +6,14 @@
     "version": "1.0.0"
   },
   "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3000",
-      "type": "string"
-    },
-    {
-      "key": "accessToken",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "postId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "commentId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "authorId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "groupId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "tournamentId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "matchId",
-      "value": "",
-      "type": "string"
-    }
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "postId", "value": "", "type": "string" },
+    { "key": "commentId", "value": "", "type": "string" },
+    { "key": "authorId", "value": "", "type": "string" },
+    { "key": "groupId", "value": "", "type": "string" },
+    { "key": "tournamentId", "value": "", "type": "string" },
+    { "key": "matchId", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -72,18 +40,10 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": JSON.stringify({
-                "email": "test@example.com",
-                "password": "password123"
-              })
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
@@ -96,20 +56,10 @@
           "name": "Register - Create Test User",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": JSON.stringify({
-                "username": "testuser",
-                "email": "test@example.com",
-                "password": "password123",
-                "fullName": "Test User"
-              })
+              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\",\n  \"fullName\": \"Test User\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/register",
@@ -143,22 +93,12 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": JSON.stringify({
-                "content": "This is a test post from Postman!",
-                "contextType": "general",
-                "visibility": "public"
-              })
+              "raw": "{\n  \"content\": \"This is a test post from Postman!\",\n  \"contextType\": \"general\",\n  \"visibility\": \"public\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/feed/posts",
@@ -172,120 +112,12 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": JSON.stringify({
-                "content": "This post is for group members only!",
-                "contextType": "group",
-                "contextId": "{{groupId}}",
-                "visibility": "group_members"
-              })
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts"]
-            }
-          }
-        },
-        {
-          "name": "Create Tournament Post",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": JSON.stringify({
-                "content": "Tournament announcement!",
-                "contextType": "tournament",
-                "contextId": "{{tournamentId}}",
-                "visibility": "tournament_participants"
-              })
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts"]
-            }
-          }
-        },
-        {
-          "name": "Create Match Post",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": JSON.stringify({
-                "content": "Match discussion thread",
-                "contextType": "match",
-                "contextId": "{{matchId}}",
-                "visibility": "public"
-              })
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts"]
-            }
-          }
-        },
-        {
-          "name": "Create Post with Media",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "content",
-                  "value": "Check out this image!",
-                  "type": "text"
-                },
-                {
-                  "key": "contextType",
-                  "value": "general",
-                  "type": "text"
-                },
-                {
-                  "key": "files",
-                  "type": "file",
-                  "src": "/path/to/test-image.jpg"
-                }
-              ]
+              "raw": "{\n  \"content\": \"This post is for group members only!\",\n  \"contextType\": \"group\",\n  \"contextId\": \"{{groupId}}\",\n  \"visibility\": \"group_members\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/feed/posts",
@@ -298,214 +130,16 @@
           "name": "Get All Posts",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": {
               "raw": "{{baseUrl}}/api/feed/posts?page=1&limit=10&status=active",
               "host": ["{{baseUrl}}"],
               "path": ["api", "feed", "posts"],
               "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                },
-                {
-                  "key": "status",
-                  "value": "active"
-                }
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "status", "value": "active" }
               ]
-            }
-          }
-        },
-        {
-          "name": "Get Post by ID",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}"]
-            }
-          }
-        },
-        {
-          "name": "Update Post",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": JSON.stringify({
-                "content": "This post has been updated!",
-                "visibility": "private"
-              })
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}"]
-            }
-          }
-        },
-        {
-          "name": "Delete Post",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}"]
-            }
-          }
-        },
-        {
-          "name": "Get Posts by Context",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/contexts/group/{{groupId}}/posts?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "contexts", "group", "{{groupId}}", "posts"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Posts by Author",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/authors/{{authorId}}/posts?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "authors", "{{authorId}}", "posts"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Hide Post",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/hide",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "hide"]
-            }
-          }
-        },
-        {
-          "name": "Unhide Post",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/unhide",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "unhide"]
-            }
-          }
-        },
-        {
-          "name": "Flag Post",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/flag",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "flag"]
-            }
-          }
-        },
-        {
-          "name": "Unflag Post",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/unflag",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "unflag"]
             }
           }
         }
@@ -524,7 +158,6 @@
                   "if (pm.response.code === 201) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('commentId', response.data._id);",
-                  "    console.log('Comment ID saved:', response.data._id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -534,245 +167,17 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": JSON.stringify({
-                "post": "{{postId}}",
-                "content": "This is a test comment!"
-              })
+              "raw": "{\n  \"post\": \"{{postId}}\",\n  \"content\": \"This is a test comment!\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/feed/comments",
               "host": ["{{baseUrl}}"],
               "path": ["api", "feed", "comments"]
-            }
-          }
-        },
-        {
-          "name": "Create Reply to Comment",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    const response = pm.response.json();",
-                  "    pm.collectionVariables.set('replyId', response.data._id);",
-                  "    console.log('Reply ID saved:', response.data._id);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": JSON.stringify({
-                "post": "{{postId}}",
-                "content": "This is a reply to the comment!",
-                "parentComment": "{{commentId}}"
-              })
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/comments",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "comments"]
-            }
-          }
-        },
-        {
-          "name": "Get Comments for Post",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/comments?page=1&limit=10&status=active",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "comments"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                },
-                {
-                  "key": "status",
-                  "value": "active"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Replies for Comment",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/comments/{{commentId}}/replies?page=1&limit=10",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "comments", "{{commentId}}", "replies"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Update Comment",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": JSON.stringify({
-                "content": "This comment has been updated!"
-              })
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/comments/{{commentId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "comments", "{{commentId}}"]
-            }
-          }
-        },
-        {
-          "name": "Delete Comment",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/comments/{{commentId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "comments", "{{commentId}}"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Reactions",
-      "item": [
-        {
-          "name": "React to Post",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/reactions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "reactions"]
-            }
-          }
-        },
-        {
-          "name": "Remove Reaction from Post",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/posts/{{postId}}/reactions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "posts", "{{postId}}", "reactions"]
-            }
-          }
-        },
-        {
-          "name": "React to Comment",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/comments/{{commentId}}/reactions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "comments", "{{commentId}}", "reactions"]
-            }
-          }
-        },
-        {
-          "name": "Remove Reaction from Comment",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/feed/comments/{{commentId}}/reactions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "feed", "comments", "{{commentId}}", "reactions"]
             }
           }
         }

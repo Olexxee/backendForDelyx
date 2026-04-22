@@ -76,7 +76,7 @@ app.use(`${apiBase}/auth`, authRoute);
 app.use(`${apiBase}/profile`, userRoute);
 // app.use(`${apiBase}/posts`, postRoute);
 // app.use(`${apiBase}/stats`, statRoute);
-app.use("/conversations", conversationRouter);
+app.use(`${apiBase}/conversations`, conversationRouter);
 app.use(`${apiBase}/groups`, groupRouter);
 app.use(`${apiBase}/config`, configRouter);
 app.use(`${apiBase}/feed`, feedRouter);
