@@ -30,6 +30,7 @@ import {
   deleteFeedPost,
   getFeedPostById,
   getFeedPosts,
+  getHomeFeed,
   getPostsByAuthor,
   getPostsByContext,
   updateFeedPost,
@@ -91,6 +92,13 @@ feedRouter.get(
   authMiddleware,
   validateParams(postIdParamSchema),
   getFeedPostById,
+);
+
+feedRouter.get(
+  "/home",
+  authMiddleware,
+  validateQuery(listFeedPostsSchema),
+  getHomeFeed,
 );
 
 feedRouter.delete(

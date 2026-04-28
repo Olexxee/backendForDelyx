@@ -5,6 +5,8 @@ import * as membershipDb from "../../groupLogic/membershipSchemaService.js";
 import { getEmailTemplate } from "../../logic/notifications/emailTemplates.js";
 import { NotificationTypes } from "../../logic/notifications/notificationTypes.js";
 
+// ─── Auth / Account ───────────────────────────────────────────────────────────
+
 export const handleUserRegistered = async ({ userId }) => {
   const user = await userService.findUserById(userId);
   if (!user) return;
@@ -108,6 +110,8 @@ export const handlePasswordResetSuccess = async ({ userId }) => {
   });
 };
 
+// ─── Group ────────────────────────────────────────────────────────────────────
+
 export const handleGroupCreated = async ({ userId, groupId }) => {
   const [user, group] = await Promise.all([
     userService.findUserById(userId),
@@ -131,20 +135,23 @@ export const handleGroupCreated = async ({ userId, groupId }) => {
   });
 };
 
-export const handleGroupJoinRequested = async ({ groupId, requesterUserId }) => {
+export const handleGroupJoinRequested = async ({
+  groupId,
+  requesterUserId,
+}) => {
   const [group, requester, memberships] = await Promise.all([
     groupDb.findGroupById(groupId),
     userService.findUserById(requesterUserId),
     membershipDb.findMembersByGroupId(
       { groupId, status: "active" },
-      { limit: 200 }
+      { limit: 200 },
     ),
   ]);
 
   if (!group || !requester) return;
 
   const adminMemberships = memberships.filter(
-    (membership) => membership.roleInGroup === "admin"
+    (membership) => membership.roleInGroup === "admin",
   );
 
   await Promise.all(
@@ -167,7 +174,7 @@ export const handleGroupJoinRequested = async ({ groupId, requesterUserId }) => 
           requesterUsername: requester.username,
         },
       });
-    })
+    }),
   );
 };
 
@@ -276,7 +283,11 @@ export const handleGroupMemberLeft = async ({ groupId, userId }) => {
   });
 };
 
-export const handleGroupMemberKicked = async ({ groupId, targetUserId, adminId }) => {
+export const handleGroupMemberKicked = async ({
+  groupId,
+  targetUserId,
+  adminId,
+}) => {
   const [group, user, admin] = await Promise.all([
     groupDb.findGroupById(groupId),
     userService.findUserById(targetUserId),
@@ -301,7 +312,11 @@ export const handleGroupMemberKicked = async ({ groupId, targetUserId, adminId }
   });
 };
 
-export const handleGroupMemberBanned = async ({ groupId, targetUserId, adminId }) => {
+export const handleGroupMemberBanned = async ({
+  groupId,
+  targetUserId,
+  adminId,
+}) => {
   const [group, user, admin] = await Promise.all([
     groupDb.findGroupById(groupId),
     userService.findUserById(targetUserId),
@@ -357,12 +372,118 @@ export const handleGroupRoleChanged = async ({
   });
 };
 
+// ─── Feed: Comments ───────────────────────────────────────────────────────────
+
+/**
+ * "feed.notify.comment"
+ *
+ * Fired when someone comments on a post or replies to a comment.
+ * The author self-comment guard is already applied in feedEventHandlers.js
+ * before this job is enqueued, so no repeat check is needed here.
+ *
+ * data: {
+ *   recipientId:     string  — post/comment author
+ *   actorId:         string  — person who commented
+ *   targetType:      "post"
+ *   targetId:        string  — the post that was commented on
+ *   commentId:       string
+ *   isReply:         boolean
+ * }
+ */
+export const handleFeedNotifyComment = async ({
+  recipientId,
+  actorId,
+  targetId,
+  commentId,
+  isReply,
+}) => {
+  const [recipient, actor] = await Promise.all([
+    userService.findUserById(recipientId),
+    userService.findUserById(actorId),
+  ]);
+
+  if (!recipient || !actor) return;
+
+  const title = isReply ? "New reply 💬" : "New comment 💬";
+  const message = isReply
+    ? `${actor.username} replied to your comment.`
+    : `${actor.username} commented on your post.`;
+
+  await NotificationService.send({
+    recipientId: recipient._id,
+    senderId: actor._id,
+    type: isReply ? "FEED_COMMENT_REPLY" : "FEED_POST_COMMENT",
+    title,
+    message,
+    channels: ["inApp"],
+    payload: {
+      targetType: "post",
+      targetId,
+      commentId,
+      actorUsername: actor.username,
+      actorAvatar: actor.profilePicture ?? null,
+    },
+  });
+};
+
+// ─── Feed: Reactions ──────────────────────────────────────────────────────────
+
+/**
+ * "feed.notify.reaction"
+ *
+ * Fired when someone reacts to a post or comment.
+ * Author self-reaction guard applied in feedEventHandlers.js before enqueue.
+ *
+ * data: {
+ *   recipientId:  string  — post/comment author
+ *   actorId:      string  — person who reacted
+ *   targetType:   "post" | "comment"
+ *   targetId:     string
+ * }
+ */
+export const handleFeedNotifyReaction = async ({
+  recipientId,
+  actorId,
+  targetType,
+  targetId,
+}) => {
+  const [recipient, actor] = await Promise.all([
+    userService.findUserById(recipientId),
+    userService.findUserById(actorId),
+  ]);
+
+  if (!recipient || !actor) return;
+
+  const label = targetType === "post" ? "post" : "comment";
+  const message = `${actor.username} liked your ${label}.`;
+
+  await NotificationService.send({
+    recipientId: recipient._id,
+    senderId: actor._id,
+    type: "FEED_REACTION",
+    title: "New reaction ❤️",
+    message,
+    channels: ["inApp"],
+    payload: {
+      targetType,
+      targetId,
+      actorUsername: actor.username,
+      actorAvatar: actor.profilePicture ?? null,
+    },
+  });
+};
+
+// ─── Handler Registry ─────────────────────────────────────────────────────────
+
 export const jobHandlers = {
+  // Auth / Account
   USER_REGISTERED: handleUserRegistered,
   VERIFICATION_SENT: handleVerificationSent,
   PASSWORD_CHANGED: handlePasswordChanged,
   PASSWORD_RESET_REQUESTED: handlePasswordResetRequested,
   PASSWORD_RESET_SUCCESS: handlePasswordResetSuccess,
+
+  // Group
   GROUP_CREATED: handleGroupCreated,
   GROUP_JOIN_REQUESTED: handleGroupJoinRequested,
   GROUP_JOIN_REQUEST_APPROVED: handleGroupJoinRequestApproved,
@@ -372,4 +493,8 @@ export const jobHandlers = {
   GROUP_MEMBER_KICKED: handleGroupMemberKicked,
   GROUP_MEMBER_BANNED: handleGroupMemberBanned,
   GROUP_ROLE_CHANGED: handleGroupRoleChanged,
+
+  // Feed
+  "feed.notify.comment": handleFeedNotifyComment,
+  "feed.notify.reaction": handleFeedNotifyReaction,
 };

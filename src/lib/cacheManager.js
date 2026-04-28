@@ -40,6 +40,27 @@ class CacheManager {
     }
   }
 
+  async getWithVersion(key, version) {
+    const versionedKey = `${key}:v${version}`;
+    return this.get(versionedKey);
+  }
+
+  async setWithVersion(key, value, version, ttl) {
+    const versionedKey = `${key}:v${version}`;
+    return this.set(versionedKey, value, ttl);
+  }
+
+ async increment(key) {
+  if (isRedisAvailable()) {
+    return await redisClient.incr(key);
+  }
+
+  const current = memoryCache.get(key) || 0;
+  const next = current + 1;
+  memoryCache.set(key, next, 3600);
+  return next;
+}
+
   async clear() {
     if (isRedisAvailable()) {
       await redisClient.flushDb();

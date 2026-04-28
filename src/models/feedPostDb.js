@@ -1,36 +1,14 @@
 import FeedPost from "./feedPostSchema.js";
+import { normalizeListOptions } from "../lib/list.js";
 
-const normalizeListOptions = (options = {}) => {
-  const {
-    page = 1,
-    limit = 20,
-    sort = { createdAt: -1 },
-    select = null,
-    populate = null,
-    session = null,
-    lean = true,
-  } = options;
-
-  const normalizedPage = Math.max(Number(page) || 1, 1);
-  const normalizedLimit = Math.max(Number(limit) || 20, 1);
-  const skip = (normalizedPage - 1) * normalizedLimit;
-
-  return {
-    page: normalizedPage,
-    limit: normalizedLimit,
-    sort,
-    select,
-    populate,
-    session,
-    lean,
-    skip,
-  };
-};
+// ─── Create ──────────────────────────────────────────────────────────────────
 
 export const createFeedPost = async (payload, options = {}) => {
   const { session = null } = options;
   return FeedPost.create([{ ...payload }], { session }).then(([doc]) => doc);
 };
+
+// ─── Read ─────────────────────────────────────────────────────────────────────
 
 export const findFeedPostById = async (postId, options = {}) => {
   const {
@@ -93,31 +71,25 @@ export const findPostsByAuthor = async (
   filters = {},
   options = {},
 ) => {
-  return findFeedPosts(
-    {
-      author: authorId,
-      ...filters,
-    },
-    options,
-  );
+  return findFeedPosts({ author: authorId, ...filters }, options);
 };
+
+// ─── Update ───────────────────────────────────────────────────────────────────
+
+const ALLOWED_UPDATE_KEYS = [
+  "content",
+  "media",
+  "visibility",
+  "isPinned",
+  "isFeatured",
+];
 
 export const updateFeedPostFields = async (postId, updates, options = {}) => {
   const { session = null, lean = false } = options;
 
   const allowedUpdates = {};
-  const allowedKeys = [
-    "content",
-    "media",
-    "visibility",
-    "isPinned",
-    "isFeatured",
-  ];
-
-  for (const key of allowedKeys) {
-    if (key in updates) {
-      allowedUpdates[key] = updates[key];
-    }
+  for (const key of ALLOWED_UPDATE_KEYS) {
+    if (key in updates) allowedUpdates[key] = updates[key];
   }
 
   let query = FeedPost.findByIdAndUpdate(postId, allowedUpdates, {
@@ -137,11 +109,7 @@ export const setFeedPostStatus = async (postId, status, options = {}) => {
   let query = FeedPost.findByIdAndUpdate(
     postId,
     { status },
-    {
-      new: true,
-      runValidators: true,
-      session,
-    },
+    { new: true, runValidators: true, session },
   );
 
   if (lean) query = query.lean();
@@ -164,6 +132,8 @@ export const setFeedPostFeaturedState = async (
 ) => {
   return updateFeedPostFields(postId, { isFeatured }, options);
 };
+
+// ─── Counters ─────────────────────────────────────────────────────────────────
 
 export const incrementPostCommentsCount = async (
   postId,

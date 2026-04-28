@@ -15,17 +15,17 @@ import {
 // ================================
 // COMPLETE FIXTURE & UPDATE STATS
 // ================================
-export const completeFixture = async ({
-  fixtureId,
-  homeGoals,
-  awayGoals,
-}) => {
+export const completeFixture = async ({ fixtureId, homeGoals, awayGoals }) => {
   const session = await mongoose.startSession();
+
+  let eventPayload = null;
+  let tournamentCompletedPayload = null;
 
   try {
     session.startTransaction();
 
     const fixture = await fixtureDb.findFixtureById(fixtureId, { session });
+
     if (!fixture) {
       throw new NotFoundException("Fixture not found");
     }
@@ -38,9 +38,12 @@ export const completeFixture = async ({
       fixture.tournamentId,
       { session },
     );
+
     if (!tournament) {
       throw new NotFoundException("Tournament not found");
     }
+
+    const groupId = tournament.groupId._id || tournament.groupId;
 
     const updatedFixture = await fixtureDb.updateFixtureResult(
       fixtureId,
@@ -48,6 +51,11 @@ export const completeFixture = async ({
       { session },
     );
 
+    /**
+     * Keep this synchronous for now.
+     * League table correctness is core tournament state,
+     * not a secondary side effect.
+     */
     await leagueService.applyFixtureResult(
       {
         tournamentId: fixture.tournamentId,
@@ -56,19 +64,6 @@ export const completeFixture = async ({
         awayTeamId: fixture.awayTeam,
         homeGoals,
         awayGoals,
-      },
-      { session },
-    );
-
-    await userStatsService.updateParticipantStatsForFixture(
-      {
-        tournamentId: fixture.tournamentId,
-        groupId: tournament.groupId._id || tournament.groupId,
-        homeUserId: fixture.homeTeam,
-        awayUserId: fixture.awayTeam,
-        homeGoals,
-        awayGoals,
-        playedAt: new Date(),
       },
       { session },
     );
@@ -93,8 +88,8 @@ export const completeFixture = async ({
         tournament.status = "completed";
 
         const participantIds = tournament.participants
-          .filter((p) => p.status === "registered")
-          .map((p) => p.userId._id || p.userId);
+          .filter((participant) => participant.status === "registered")
+          .map((participant) => participant.userId._id || participant.userId);
 
         const standings = await leagueService.getTournamentStandings(
           fixture.tournamentId,
@@ -103,15 +98,12 @@ export const completeFixture = async ({
 
         const winnerId = standings?.[0]?.participantId || null;
 
-        await userStatsService.recordTournamentCompletion(
-          {
-            participantIds,
-            winnerId,
-            tournamentId: fixture.tournamentId,
-            groupId: tournament.groupId._id || tournament.groupId,
-          },
-          { session },
-        );
+        tournamentCompletedPayload = {
+          tournamentId: fixture.tournamentId,
+          groupId,
+          participantIds,
+          winnerId,
+        };
       } else if (
         Number(tournament.currentMatchday) === Number(fixture.matchday)
       ) {
@@ -121,18 +113,35 @@ export const completeFixture = async ({
       await tournament.save({ session });
     }
 
-    await updateGroupMetrics(
-      tournament.groupId._id || tournament.groupId,
-      session,
-    );
+    eventPayload = {
+      tournamentId: fixture.tournamentId,
+      fixtureId: fixture._id,
+      groupId,
+      homeTeamId: fixture.homeTeam,
+      awayTeamId: fixture.awayTeam,
+      homeGoals,
+      awayGoals,
+      matchday: fixture.matchday,
+      playedAt: new Date().toISOString(),
+    };
 
     await session.commitTransaction();
 
-    await cache.deleteByPattern(`tournament:${fixture.tournamentId}:*`);
-    await cache.deleteByPattern(`user:*:upcoming-fixtures`);
+    /**
+     * Events are published only after commit.
+     * Never publish events before DB truth is saved.
+     */
+    await publishDomainEvent(EVENT_TYPES.FIXTURE_COMPLETED, eventPayload);
+
+    if (tournamentCompletedPayload) {
+      await publishDomainEvent(
+        EVENT_TYPES.TOURNAMENT_COMPLETED,
+        tournamentCompletedPayload,
+      );
+    }
 
     return {
-      message: "Fixture completed and stats updated successfully",
+      message: "Fixture completed successfully",
       fixture: updatedFixture,
     };
   } catch (error) {

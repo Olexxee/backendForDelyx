@@ -16,10 +16,9 @@ import {
   setFeedCommentStatus,
   updateFeedCommentById,
 } from "../../models/feedCommentDb.js";
-import {
-  findFeedPostById,
-  incrementPostCommentsCount,
-} from "../../models/feedPostDb.js";
+import { findFeedPostById } from "../../models/feedPostDb.js";
+import { publishDomainEvent } from "../../queues/publishDomainEvent.js";
+import { EVENT_TYPES } from "../../event/eventTypes.js";
 
 export const createComment = async (payload, options = {}) => {
   const validated = validator.validate(createFeedCommentSchema, payload);
@@ -46,7 +45,20 @@ export const createComment = async (payload, options = {}) => {
 
   const comment = await createFeedComment(validated, options);
 
-  await incrementPostCommentsCount(validated.post, 1, options);
+  // Moved off the critical path — the HTTP response returns immediately.
+  // The domain event worker handles incrementing commentsCount and
+  // dispatching any notifications. Accepts ~1s eventual consistency
+  // on the count displayed to other users.
+  await publishDomainEvent(EVENT_TYPES.FEED_POST_COMMENTED, {
+    postId: String(validated.post),
+    commentId: String(comment._id),
+    authorId: String(validated.author),
+    postAuthorId: String(post.author?._id ?? post.author),
+    isReply: Boolean(validated.parentComment),
+    parentCommentId: validated.parentComment
+      ? String(validated.parentComment)
+      : null,
+  });
 
   return comment;
 };
@@ -129,9 +141,7 @@ export const updateComment = async (commentId, updates, options = {}) => {
 
   const updated = await updateFeedCommentById(
     commentId,
-    {
-      content: validated.content,
-    },
+    { content: validated.content },
     options,
   );
 
@@ -155,7 +165,11 @@ export const softDeleteComment = async (commentId, options = {}) => {
     throw new NotFoundException("Comment not found.");
   }
 
-  await incrementPostCommentsCount(existingComment.post, -1, options);
+  // Moved off the critical path — worker handles the decrement.
+  await publishDomainEvent(EVENT_TYPES.FEED_POST_COMMENT_DELETED, {
+    postId: String(existingComment.post),
+    commentId: String(existingComment._id),
+  });
 
   return deleted;
 };

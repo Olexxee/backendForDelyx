@@ -1,4 +1,3 @@
-// src/logic/socket/redisClient.js
 import { createClient } from "redis";
 import configService from "../../lib/classes/configClass.js";
 

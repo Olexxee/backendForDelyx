@@ -11,6 +11,17 @@ export const findReaction = async (query, options = {}) => {
   return dbQuery;
 };
 
+export const findReactionsForTargets = async ({ user, targetType, targetIds }, options = {}) => {
+  const { session = null } = options;
+  let query = FeedReaction.find({
+    user,
+    targetType,
+    targetId: { $in: targetIds },
+  }).lean();
+  if (session) query = query.session(session);
+  return query;
+};
+
 export const upsertReaction = async (payload, options = {}) => {
   const { session = null, lean = false } = options;
 
