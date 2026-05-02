@@ -122,15 +122,16 @@ export const findGroupById = async (groupId, options = {}) => {
   return query.exec();
 };
 
-export const findGroupsByIds = async (ids, options = {}) => {
-  const { session, populateChatRoom = false, lean = true } = options;
+export const findGroupsByIds = (ids, options = {}) => {
+  const { session, skip = 0, limit = 10 } = options;
 
-  let query = Group.find({ _id: { $in: ids } }).session(session || null);
-
-  if (populateChatRoom) query = query.populate("chatRoom").populate("avatar");
-  if (lean) query = query.lean();
-
-  return query.exec();
+  return Group.find({ _id: { $in: ids } })
+    .sort({ lastActivityAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate("avatar")
+    .session(session || null)
+    .lean();
 };
 
 export const searchGroupsByName = async ({ name }, options = {}) => {

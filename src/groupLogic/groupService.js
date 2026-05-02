@@ -3,6 +3,7 @@ import * as groupDb from "./gSchemaService.js";
 import * as membershipService from "./membershipService.js";
 import * as membershipCrud from "./membershipSchemaService.js";
 import * as userService from "../user/userService.js";
+import * as tournamentCrud from "../models/tournamentSchemaService.js";
 import * as tournamentService from "../tournamentLogic/tournamentService.js";
 import { serializeGroup, serializeUser } from "../lib/serializeUser.js";
 import { enqueueNotificationJob } from "../queues/notificationQueue.js";
@@ -231,7 +232,7 @@ export const getGroupOverview = async ({ groupId, userId }) => {
     pendingCountResult,
   ] = await Promise.all([
     membershipService.findMembership({ userId, groupId }),
-    membershipCrud.getMemberPreview(groupId),
+    membershipService.getMemberPreview(groupId),
     tournamentService.getGroupTournaments(groupId, "ongoing"),
     membershipService.countPendingRequests(groupId).catch(() => 0),
   ]);
@@ -284,32 +285,46 @@ export const getGroupOverview = async ({ groupId, userId }) => {
 export const getMyGroups = async ({ userId, page = 1, limit = 10 }) => {
   const skip = (page - 1) * limit;
 
-  const memberships = await membershipCrud.findMembershipsByUser(userId);
+  const memberships = await membershipCrud.findGroupsByUser({ userId });
+  if (!memberships?.length) return [];
+
   const groupIds = memberships.map((m) => m.groupId);
 
   const membershipMap = new Map(
     memberships.map((m) => [m.groupId.toString(), m.roleInGroup]),
   );
 
-  const groups = await groupDb.Model.find({ _id: { $in: groupIds } })
-    .sort({ lastActivityAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .populate("activeTournament", "name status")
-    .populate("avatar")
-    .lean();
+  const [groups, activeTournaments] = await Promise.all([
+    groupDb.findGroupsByIds(groupIds, { skip, limit }),
+    tournamentCrud.findActiveTournamentsByGroups(groupIds),
+  ]);
 
-  return groups.map((g) => ({
-    id: g._id.toString(),
-    name: g.name,
-    description: g.bio ?? null,
-    avatar: g.avatar?.url ?? null,
-    privacy: g.privacy,
-    totalMembers: g.totalMembers ?? 0,
-    myRole: membershipMap.get(g._id.toString()) ?? "member",
-    activeTournament: g.activeTournament || null,
-    lastActivityAt: g.lastActivityAt,
-  }));
+  const activeTournamentMap = new Map(
+    activeTournaments.map((t) => [t.groupId.toString(), t]),
+  );
+
+  return groups.map((g) => {
+    const id = g._id.toString();
+    const tournament = activeTournamentMap.get(id) ?? null;
+
+    return {
+      id,
+      name: g.name,
+      description: g.bio ?? null,
+      avatar: g.avatar?.url ?? null,
+      privacy: g.privacy,
+      totalMembers: g.totalMembers ?? 0,
+      myRole: membershipMap.get(id) ?? "member",
+      activeTournament: tournament
+        ? {
+            id: tournament._id.toString(),
+            name: tournament.name,
+            status: tournament.status,
+          }
+        : null,
+      lastActivityAt: g.lastActivityAt,
+    };
+  });
 };
 
 // =====================================================

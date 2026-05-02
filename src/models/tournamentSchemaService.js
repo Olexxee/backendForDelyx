@@ -294,6 +294,17 @@ export const findUserTournaments = async (
     .session(session || null);
 };
 
+export const findActiveTournamentsByGroups = async (groupIds, options = {}) => {
+  const { session } = options;
+  return Tournament.find({
+    groupId: { $in: groupIds },
+    status: { $in: ["upcoming", "registration", "ongoing"] },
+  })
+    .select("groupId name status")
+    .session(session || null)
+    .lean();
+};
+
 // ============================================================
 // CAPACITY
 // ============================================================
