@@ -473,6 +473,27 @@ export const handleFeedNotifyReaction = async ({
   });
 };
 
+export const handleChatMessageNotification = async ({
+  recipientId,
+  senderId,
+  chatRoomId,
+  messageId,
+  senderUsername,
+}) => {
+  await NotificationService.send({
+    recipientId,
+    senderId,
+    type: NotificationTypes.CHAT_MESSAGE,
+    title: "New message",
+    message: `${senderUsername} sent you a message.`,
+    channels: ["inApp", "push"],
+    payload: {
+      chatRoomId,
+      messageId,
+    },
+  });
+};
+
 // ─── Handler Registry ─────────────────────────────────────────────────────────
 
 export const jobHandlers = {
@@ -497,4 +518,7 @@ export const jobHandlers = {
   // Feed
   "feed.notify.comment": handleFeedNotifyComment,
   "feed.notify.reaction": handleFeedNotifyReaction,
+
+  // Chat
+  CHAT_MESSAGE_NOTIFICATION: handleChatMessageNotification,
 };

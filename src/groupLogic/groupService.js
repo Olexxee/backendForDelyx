@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import * as groupDb from "./gSchemaService.js";
 import * as membershipService from "./membershipService.js";
+import * as chatDb from "../models/chatSchemaService.js";
 import * as membershipCrud from "./membershipSchemaService.js";
 import * as userService from "../user/userService.js";
 import * as tournamentCrud from "../models/tournamentSchemaService.js";
@@ -290,17 +291,31 @@ export const getMyGroups = async ({ userId, page = 1, limit = 10 }) => {
 
   const groupIds = memberships.map((m) => m.groupId);
 
+  console.log(
+    memberships.map((m) => ({
+      groupId: m.groupId,
+      type: typeof m.groupId,
+      role: m.roleInGroup,
+    })),
+  );
+
   const membershipMap = new Map(
     memberships.map((m) => [m.groupId.toString(), m.roleInGroup]),
   );
 
-  const [groups, activeTournaments] = await Promise.all([
+  const [groups, activeTournaments, chatRooms] = await Promise.all([
     groupDb.findGroupsByIds(groupIds, { skip, limit }),
     tournamentCrud.findActiveTournamentsByGroups(groupIds),
+    chatDb.findChatRoomsByGroupIds(groupIds),
   ]);
 
   const activeTournamentMap = new Map(
     activeTournaments.map((t) => [t.groupId.toString(), t]),
+  );
+
+
+  const chatRoomMap = new Map(
+    chatRooms.map((r) => [r.contextId.toString(), r._id.toString()]),
   );
 
   return groups.map((g) => {
@@ -310,6 +325,7 @@ export const getMyGroups = async ({ userId, page = 1, limit = 10 }) => {
     return {
       id,
       name: g.name,
+      chatRoomId: chatRoomMap.get(id) ?? null,
       description: g.bio ?? null,
       avatar: g.avatar?.url ?? null,
       privacy: g.privacy,

@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
-
 import client from "../../queues/bullmqRedis.js";
+import { handleChatMessageCreated } from "../../event/handlers/chatEventHandler.js";
 import { EVENT_TYPES } from "../../event/eventTypes.js";
 
 import {
@@ -34,6 +34,9 @@ const handlers = {
   [EVENT_TYPES.FEED_POST_UNREACTED]: handleFeedPostUnreacted,
   [EVENT_TYPES.FEED_COMMENT_REACTED]: handleFeedCommentReacted,
   [EVENT_TYPES.FEED_COMMENT_UNREACTED]: handleFeedCommentUnreacted,
+
+  // ─── Chat ──────────────────────────────────────────────────────────────────
+  [EVENT_TYPES.CHAT_MESSAGE_CREATED]: handleChatMessageCreated,
 };
 
 export const domainEventWorker = new Worker(

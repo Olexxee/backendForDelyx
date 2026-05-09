@@ -1,11 +1,13 @@
 import mongoose from "mongoose";
-import ChatRoom from "../../models/chatRoomSchema.js";
+import * as chatRoomService from "../../models/chatSchemaService.js";
 import Message from "../../models/messageSchema.js";
 import { decrypt } from "../../lib/encryption.js";
 import { ensureChatAccess } from "./chatGuard.js";
 import * as membershipService from "../../groupLogic/membershipService.js";
-import notificationService from "../notifications/notificationService.js";
-import { getSocketsByUserId } from "../socket/socketRegistry.js";
+
+import { enqueueDomainEvent } from "../../queues/domainEventQueue.js";
+import { EVENT_TYPES } from "../../event/eventTypes.js";
+
 import {
   NotFoundException,
   BadRequestError,
@@ -23,11 +25,12 @@ const resolveMessageType = ({ content, mediaIds = [], system = false }) => {
 
   if (hasText && hasMedia) return "mixed";
   if (hasMedia) return "media";
+
   return "text";
 };
 
 /**
- * Build preview text for chat room + inbox surfaces
+ * Build preview text for inbox + room surfaces
  */
 const buildPreviewText = ({ content, mediaIds = [], messageType }) => {
   const trimmed = content?.trim() || "";
@@ -43,6 +46,7 @@ const buildPreviewText = ({ content, mediaIds = [], messageType }) => {
 
   if (messageType === "mixed") {
     const clipped = trimmed.slice(0, 80);
+
     return mediaCount > 0
       ? `${clipped} · ${mediaCount} attachment${mediaCount > 1 ? "s" : ""}`
       : clipped;
@@ -52,27 +56,17 @@ const buildPreviewText = ({ content, mediaIds = [], messageType }) => {
 };
 
 /**
- * Decrypt a message payload into plaintext
+ * Resolve plaintext from encrypted payload
  */
 const resolvePlaintext = ({ msg, aesKey }) => {
   let plaintext = msg.content || "";
 
-  if (
-    !plaintext &&
-    msg.encryptedContent &&
-    msg.iv &&
-    msg.authTag &&
-    aesKey
-  ) {
+  if (!plaintext && msg.encryptedContent && msg.iv && msg.authTag && aesKey) {
     try {
-      plaintext = decrypt(
-        msg.encryptedContent,
-        aesKey,
-        msg.iv,
-        msg.authTag,
-      );
+      plaintext = decrypt(msg.encryptedContent, aesKey, msg.iv, msg.authTag);
     } catch (err) {
       console.error(`Failed to decrypt message ${msg._id}:`, err.message);
+
       plaintext = "";
     }
   }
@@ -82,21 +76,33 @@ const resolvePlaintext = ({ msg, aesKey }) => {
 
 class ChatService {
   /**
-   * Fetch latest messages
+   * Fetch room messages
    */
   async getMessages({ chatRoomId, userId, limit = 30, before }) {
-    const room = await ChatRoom.findById(chatRoomId).select("+aesKey");
+    const room = await chatRoomService
+      .getChatRoom(chatRoomId)
+      .select("+aesKey");
+
     if (!room) {
       throw new NotFoundException("Chat room not found");
     }
 
-    await ensureChatAccess({ chatRoom: room, userId });
+    await ensureChatAccess({
+      chatRoom: room,
+      userId,
+    });
 
     const messages = await Message.find({
       chatRoom: chatRoomId,
       deletedFor: { $ne: userId },
       isDeleted: { $ne: true },
-      ...(before ? { createdAt: { $lt: new Date(before) } } : {}),
+      ...(before
+        ? {
+            createdAt: {
+              $lt: new Date(before),
+            },
+          }
+        : {}),
     })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -125,11 +131,15 @@ class ChatService {
       success: true,
       data: {
         messages: messages.map((msg) => {
-          const plaintext = resolvePlaintext({ msg, aesKey });
+          const plaintext = resolvePlaintext({
+            msg,
+            aesKey,
+          });
 
           return {
             id: msg._id.toString(),
             chatRoomId: msg.chatRoom.toString(),
+
             sender: msg.sender
               ? {
                   id: msg.sender._id.toString(),
@@ -137,16 +147,22 @@ class ChatService {
                   profilePicture: msg.sender.profilePicture ?? null,
                 }
               : null,
+
             content: plaintext,
+
             media: (msg.media || []).map((m) =>
               typeof m === "string" ? m : m.url,
             ),
+
             messageType: msg.messageType || "text",
+            kind: msg.messageType === "system" ? "system" : "user",
             meta: msg.meta ?? null,
             createdAt: msg.createdAt,
+
             isMine: msg.sender?._id?.toString() === userId.toString(),
           };
         }),
+
         count: messages.length,
         hasMore: messages.length === limit,
       },
@@ -154,7 +170,7 @@ class ChatService {
   }
 
   /**
-   * Create a new message
+   * Create message
    */
   async createMessage({
     chatRoomId,
@@ -174,15 +190,18 @@ class ChatService {
       throw new BadRequestError("Invalid chatRoomId");
     }
 
-    const room = await ChatRoom.findById(chatRoomId).select(
-      "+aesKey participants contextType contextId",
-    );
+    const room = await chatRoomService
+      .getChatRoom(chatRoomId)
+      .select("+aesKey participants contextType contextId");
 
     if (!room) {
       throw new NotFoundException("Chat room not found");
     }
 
-    await ensureChatAccess({ chatRoom: room, userId: senderId });
+    await ensureChatAccess({
+      chatRoom: room,
+      userId: senderId,
+    });
 
     const messageType = resolveMessageType({
       content: trimmedContent,
@@ -197,6 +216,7 @@ class ChatService {
     });
 
     const session = await mongoose.startSession();
+
     let messageDoc;
 
     try {
@@ -206,13 +226,18 @@ class ChatService {
             {
               chatRoom: chatRoomId,
               sender: senderId,
+
               messageType,
+
               content: trimmedContent || null,
               media: mediaIds,
+
               previewText,
               meta,
+
               deliveredTo: [senderId],
               readBy: [senderId],
+
               deliveredAt: new Date(),
               readAt: new Date(),
             },
@@ -222,14 +247,12 @@ class ChatService {
 
         messageDoc = message;
 
-        await ChatRoom.updateOne(
-          { _id: chatRoomId },
+        await chatRoomService.updateChatRoom(
+          chatRoomId,
           {
-            $set: {
-              lastMessageId: message._id,
-              lastMessageAt: message.createdAt,
-              lastMessagePreview: previewText,
-            },
+            lastMessageId: message._id,
+            lastMessageAt: message.createdAt,
+            lastMessagePreview: previewText,
           },
           { session },
         );
@@ -240,6 +263,15 @@ class ChatService {
         "username firstName lastName profilePicture",
       );
 
+      /**
+       * Emit domain event AFTER transaction commits
+       */
+      await enqueueDomainEvent(EVENT_TYPES.CHAT_MESSAGE_CREATED, {
+        chatRoomId,
+        messageId: messageDoc._id.toString(),
+        senderId: senderId.toString(),
+      });
+
       return messageDoc;
     } finally {
       await session.endSession();
@@ -247,7 +279,7 @@ class ChatService {
   }
 
   /**
-   * Mark room messages as delivered for a user
+   * Mark messages as delivered
    */
   async markDelivered({ chatRoomId, userId }) {
     await Message.updateMany(
@@ -258,14 +290,19 @@ class ChatService {
         deliveredTo: { $ne: userId },
       },
       {
-        $addToSet: { deliveredTo: userId },
-        $set: { deliveredAt: new Date() },
+        $addToSet: {
+          deliveredTo: userId,
+        },
+
+        $set: {
+          deliveredAt: new Date(),
+        },
       },
     );
   }
 
   /**
-   * Mark room messages as read for a user
+   * Mark messages as read
    */
   async markRead({ chatRoomId, userId }) {
     await Message.updateMany(
@@ -276,17 +313,23 @@ class ChatService {
         readBy: { $ne: userId },
       },
       {
-        $addToSet: { readBy: userId },
-        $set: { readAt: new Date() },
+        $addToSet: {
+          readBy: userId,
+        },
+
+        $set: {
+          readAt: new Date(),
+        },
       },
     );
   }
 
   /**
-   * Soft delete a message
+   * Soft delete message
    */
   async softDeleteMessage({ messageId, userId }) {
     const message = await Message.findById(messageId);
+
     if (!message) {
       throw new NotFoundException("Message not found");
     }
@@ -296,16 +339,18 @@ class ChatService {
     }
 
     message.isDeleted = true;
+
     await message.save();
 
     return message;
   }
 
   /**
-   * Hard delete a message for everyone
+   * Hard delete for everyone
    */
   async deleteMessageForEveryone({ user, messageId }) {
     const message = await Message.findById(messageId);
+
     if (!message) {
       throw new NotFoundException("Message not found");
     }
@@ -315,16 +360,17 @@ class ChatService {
     }
 
     await message.deleteOne();
+
     return message;
   }
 
   /**
-   * Get AES encryption key for a room
+   * Get AES room key
    */
   async getAesKey({ chatRoomId, userId }) {
-    const room = await ChatRoom.findById(chatRoomId).select(
-      "+aesKey contextType contextId",
-    );
+    const room = await chatRoomService
+      .getChatRoom(chatRoomId)
+      .select("+aesKey contextType contextId");
 
     if (!room) {
       throw new NotFoundException("Chat room not found");
@@ -341,36 +387,9 @@ class ChatService {
       }
     }
 
-    return { aesKey: room.aesKey };
-  }
-
-  /**
-   * Notify offline participants
-   */
-  async notifyOfflineParticipants(room, senderId, chatRoomId) {
-    const offlineUsers = room.participants
-      .map(String)
-      .filter(
-        (id) =>
-          id !== senderId.toString() && getSocketsByUserId(id).length === 0,
-      );
-
-    if (!offlineUsers.length) {
-      return;
-    }
-
-    await Promise.all(
-      offlineUsers.map((userId) =>
-        notificationService.send({
-          recipientId: userId,
-          senderId,
-          type: "CHAT_MESSAGE",
-          title: "New Message",
-          message: "You have a new encrypted message",
-          payload: { chatRoomId },
-        }),
-      ),
-    );
+    return {
+      aesKey: room.aesKey,
+    };
   }
 }
 

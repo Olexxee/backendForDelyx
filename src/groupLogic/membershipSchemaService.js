@@ -24,7 +24,7 @@ export const findGroupsByUser = async (
   const { session = null } = options;
 
   return Membership.find({ userId, status })
-    .select("groupId")
+    .select("groupId roleInGroup")
     .session(session)
     .lean();
 };

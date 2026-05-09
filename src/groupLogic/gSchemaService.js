@@ -19,7 +19,7 @@ export const findGroupHubBaseById = async (groupId, options = {}) => {
     .select(
       "name bio avatar privacy totalMembers chatRoom isActive activeTournamentsCount",
     )
-    .populate("banner")
+    .populate("avatar", "url")
     .populate("chatRoom", "_id lastMessageAt lastMessagePreview messagesCount")
     .session(session || null)
     .exec();

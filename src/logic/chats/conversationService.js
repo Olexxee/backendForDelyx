@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import ChatRoom from "../../models/chatRoomSchema.js";
+import * as chatService from "../../models/chatSchemaService.js";
 import Message from "../../models/messageSchema.js";
 import Group from "../../groupLogic/groupSchema.js";
 import * as membershipService from "../../groupLogic/membershipService.js";
@@ -133,10 +133,11 @@ const buildDirectConversationItem = async ({ room, userId }) => {
 
 class ConversationService {
   async getInboxForUser({ userId }) {
-    const rooms = await ChatRoom.find({
-      participants: new mongoose.Types.ObjectId(userId),
-    })
-      .sort({ lastMessageAt: -1 })
+    const rooms = await chatService
+      .findChatRooms({
+        participants: new mongoose.Types.ObjectId(userId),
+      })
+      .sort({ lastMessageAt: -1, updatedAt: -1 })
       .lean();
 
     const items = [];
@@ -160,7 +161,7 @@ class ConversationService {
   }
 
   async getConversationDetail({ chatRoomId, userId }) {
-    const room = await ChatRoom.findById(chatRoomId).lean();
+    const room = await chatService.findChatById(chatRoomId).lean();
 
     if (!room) {
       throw new NotFoundException("Conversation not found");
@@ -210,7 +211,7 @@ class ConversationService {
 
       return {
         conversation: {
-          id: room._id.toString(),
+          chatRoomId: room._id.toString(),
           type: "group",
           title: group.name,
           avatarUrl: normalizeAvatar(group.avatar),
@@ -240,7 +241,7 @@ class ConversationService {
 
     return {
       conversation: {
-        id: room._id.toString(),
+        chatRoomId: room._id.toString(),
         type: "direct",
         title: otherUser.username || "Unknown User",
         avatarUrl: normalizeAvatar(otherUser.profilePicture),

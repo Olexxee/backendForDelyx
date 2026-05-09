@@ -62,16 +62,17 @@ export const getUserChatRooms = asyncWrapper(async (req, res) => {
  */
 export const getMessages = asyncWrapper(async (req, res) => {
   const { chatRoomId } = req.params;
-  const limit = parseInt(req.query.limit || 50);
-  const skip = parseInt(req.query.skip || 0);
+  const { before, limit = 30 } = req.query;
   const userId = req.user.id;
 
-  const messages = await ChatService.getMessages({ chatRoomId, userId, limit, skip });
-
-  res.status(200).json({
-    success: true,
-    data: { messages, count: messages.length, hasMore: messages.length === limit },
+  const result = await ChatService.getMessages({
+    chatRoomId,
+    userId,
+    limit: parseInt(limit),
+    before,
   });
+
+  res.status(200).json(result);
 });
 
 /**
